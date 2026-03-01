@@ -141,6 +141,7 @@ export type ServerMessage =
     roomStatus: RoomStatus;
     opponentName: string | null;
     opponentAvatar: string | null;
+    mapSize: 8 | 12 | 16;
   }
   | { type: "player_joined"; userId: string; name: string; avatarUrl: string }
   | { type: "phase_change"; phase: RoomStatus }

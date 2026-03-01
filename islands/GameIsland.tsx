@@ -46,6 +46,7 @@ export default function GameIsland(
   const spawnCells = useSignal<{ x: number; y: number }[]>([]);
   const spawnConfirmed = useSignal(false);
   const opponentSpawnReady = useSignal(false);
+  const spawnError = useSignal("");
   const mapCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // ── Combat ────────────────────────────────────────────────────────────────
@@ -62,6 +63,11 @@ export default function GameIsland(
   // ── Log ───────────────────────────────────────────────────────────────────
   const logLines = useSignal<LogLine[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
+
+  // ── Debug panel (host only) ───────────────────────────────────────────────
+  const debugEntries = useSignal<string[]>([]);
+  const debugOpen = useSignal(false);
+  const debugRef = useRef<HTMLDivElement>(null);
 
   function addLog(text: string, kind: LogLine["kind"] = "sys") {
     logLines.value = [...logLines.value, { text, kind }];
@@ -88,6 +94,10 @@ export default function GameIsland(
         } catch {
           return;
         }
+        if (playerNum === 1) {
+          const t = new Date().toTimeString().slice(0, 8);
+          debugEntries.value = [...debugEntries.value, `[${t}] IN  ${evt.data}`];
+        }
         handleServerMessage(msg);
       };
 
@@ -111,7 +121,12 @@ export default function GameIsland(
   function send(msg: object) {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+      const data = JSON.stringify(msg);
+      if (playerNum === 1) {
+        const t = new Date().toTimeString().slice(0, 8);
+        debugEntries.value = [...debugEntries.value, `[${t}] OUT ${data}`];
+      }
+      ws.send(data);
     }
   }
 
@@ -122,6 +137,7 @@ export default function GameIsland(
         opponentName.value = msg.opponentName;
         if (msg.opponentName) opponentJoined.value = true;
         if (msg.roomStatus !== "lobby") phase.value = msg.roomStatus;
+        mapSize.value = msg.mapSize;
         break;
 
       case "player_joined":
@@ -140,6 +156,7 @@ export default function GameIsland(
           spawnCells.value = [];
           spawnConfirmed.value = false;
           opponentSpawnReady.value = false;
+          spawnError.value = "";
         }
         break;
 
@@ -217,6 +234,10 @@ export default function GameIsland(
 
       case "error":
         addLog(`⚠️ ${msg.message}`, "sys");
+        if (phase.value === "spawn") {
+          spawnError.value = msg.message;
+          spawnConfirmed.value = false;
+        }
         break;
 
       case "pong":
@@ -295,9 +316,14 @@ export default function GameIsland(
 
     ctx.fillStyle = "#7f7fd5";
     ctx.font = "11px Courier New";
-    ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText("← Your spawn zone", 3, 3);
+    if (playerNum === 1) {
+      ctx.textAlign = "left";
+      ctx.fillText("← Your spawn zone", 3, 3);
+    } else {
+      ctx.textAlign = "right";
+      ctx.fillText("Your spawn zone →", sz * cs - 3, 3);
+    }
   }
 
   function onMapCanvasClick(e: MouseEvent) {
@@ -315,6 +341,7 @@ export default function GameIsland(
     if (existing >= 0) cells.splice(existing, 1);
     else if (cells.length < 4) cells.push({ x, y });
     spawnCells.value = cells;
+    spawnError.value = "";
   }
 
   function renderGame() {
@@ -495,6 +522,65 @@ export default function GameIsland(
     addLog("Your spawn confirmed.", "sys");
   }
 
+  // ── Debug panel auto-scroll ───────────────────────────────────────────────
+  useEffect(() => {
+    if (debugRef.current) {
+      debugRef.current.scrollTop = debugRef.current.scrollHeight;
+    }
+  }, [debugEntries.value]);
+
+  function renderDebugPanel() {
+    if (playerNum !== 1) return null;
+    return (
+      <div class="mt-4 border border-warning/30 rounded bg-base-200">
+        <button
+          class="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-base-300 transition-colors"
+          onClick={() => { debugOpen.value = !debugOpen.value; }}
+        >
+          <span class="text-xs font-mono text-warning/70">
+            🐛 Debug (host only) — {debugEntries.value.length} msgs
+          </span>
+          <span class="text-xs text-base-content/40">{debugOpen.value ? "▲" : "▼"}</span>
+        </button>
+        {debugOpen.value && (
+          <>
+            <div
+              ref={debugRef}
+              class="font-mono text-xs p-2 h-48 overflow-y-auto bg-base-300 whitespace-pre-wrap break-all"
+            >
+              {debugEntries.value.length === 0
+                ? <span class="text-base-content/30">No messages yet.</span>
+                : debugEntries.value.map((e, i) => (
+                  <div
+                    key={i}
+                    class={e.includes(" IN  ") ? "text-success/80" : "text-warning/80"}
+                  >
+                    {e}
+                  </div>
+                ))}
+            </div>
+            <div class="px-3 py-2 flex gap-2">
+              <button
+                class="btn btn-xs btn-outline btn-warning"
+                onClick={() => {
+                  navigator.clipboard?.writeText(debugEntries.value.join("\n"));
+                }}
+              >
+                Copy all
+              </button>
+              <button
+                class="btn btn-xs btn-ghost"
+                onClick={() => { debugEntries.value = []; }}
+              >
+                Clear
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
@@ -526,6 +612,7 @@ export default function GameIsland(
           <span class="loading loading-dots loading-sm" />
           <p class="text-base-content/50 text-sm">Waiting for opponent...</p>
         </div>
+        {renderDebugPanel()}
       </div>
     );
   }
@@ -621,6 +708,7 @@ export default function GameIsland(
               : "Waiting for opponent..."}
           </div>
         )}
+        {renderDebugPanel()}
       </div>
     );
   }
@@ -667,6 +755,10 @@ export default function GameIsland(
           onClick={onMapCanvasClick}
         />
 
+        {spawnError.value && (
+          <p class="text-error text-sm font-mono">⚠️ {spawnError.value}</p>
+        )}
+
         <div class="flex gap-3 items-center">
           <button
             class="btn btn-primary"
@@ -684,6 +776,7 @@ export default function GameIsland(
             </span>
           )}
         </div>
+        {renderDebugPanel()}
       </div>
     );
   }
@@ -923,6 +1016,7 @@ export default function GameIsland(
           </div>
         </div>
       )}
+      {renderDebugPanel()}
     </div>
   );
 }

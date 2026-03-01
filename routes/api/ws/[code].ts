@@ -105,6 +105,7 @@ export const handler = define.handlers({
         roomStatus: room.phase,
         opponentName,
         opponentAvatar,
+        mapSize: room.mapSize,
       });
 
       // Notify opponent that this player connected
