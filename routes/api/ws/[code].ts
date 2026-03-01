@@ -1,5 +1,6 @@
 import { getSessionUser } from "../../../lib/auth.ts";
 import { getRoom as getKvRoom, saveGameHistory, saveRoom, updateUserStats } from "../../../lib/kv.ts";
+import { define } from "../../../utils.ts";
 import {
   applyAction,
   buildUnitsFromSpawn,
@@ -24,12 +25,12 @@ import type {
   UnitBuild,
 } from "../../../lib/types.ts";
 
-export const handler = {
-  async GET(req: Request, ctx: { params: { code: string } }): Promise<Response> {
+export const handler = define.handlers({
+  async GET(ctx): Promise<Response> {
     const code = ctx.params.code.toUpperCase();
 
     // Authenticate user from session cookie
-    const user = await getSessionUser(req);
+    const user = await getSessionUser(ctx.req);
     if (!user) {
       return new Response("Unauthorized", { status: 401 });
     }
@@ -52,7 +53,7 @@ export const handler = {
     }
 
     // Upgrade to WebSocket
-    const { socket, response } = Deno.upgradeWebSocket(req);
+    const { socket, response } = Deno.upgradeWebSocket(ctx.req);
 
     // If new guest joining, update KV room
     if (!isHost && !isGuest && isRoomOpen) {
@@ -320,7 +321,7 @@ export const handler = {
 
     return response;
   },
-};
+});
 
 async function buildAndStartGame(
   room: ReturnType<typeof getOrCreateRoom>,
