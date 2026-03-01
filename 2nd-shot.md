@@ -1,0 +1,1 @@
+Let's get started with a plan to get this GAME POC in working order. I will provide the initial prompt as a initial-prompt.md. Tactical-game.html was the initial agent's first output; however it is non-functional and two peers on same network cannot connect even with shared key. No gameplay has been tested due to lack of network connectivity. 
