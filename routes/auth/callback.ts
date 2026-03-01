@@ -1,7 +1,7 @@
 import { handleCallback } from "@deno/kv-oauth";
 import { googleOAuthConfig } from "../../lib/auth.ts";
-import { upsertUser } from "../../lib/kv.ts";
-import { getKv } from "../../lib/kv.ts";
+import { getKv, upsertUser } from "../../lib/kv.ts";
+import { define } from "../../utils.ts";
 
 interface GoogleUserInfo {
   sub: string;
@@ -10,10 +10,10 @@ interface GoogleUserInfo {
   picture: string;
 }
 
-export const handler = {
-  async GET(req: Request): Promise<Response> {
+export const handler = define.handlers({
+  async GET(ctx) {
     const { response, sessionId, tokens } = await handleCallback(
-      req,
+      ctx.req,
       googleOAuthConfig,
     );
 
@@ -38,4 +38,4 @@ export const handler = {
 
     return response;
   },
-};
+});

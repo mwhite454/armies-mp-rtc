@@ -1,7 +1,8 @@
 import { signOut } from "@deno/kv-oauth";
+import { define } from "../utils.ts";
 
-export const handler = {
-  async GET(req: Request): Promise<Response> {
-    return await signOut(req);
+export const handler = define.handlers({
+  async GET(ctx) {
+    return await signOut(ctx.req);
   },
-};
+});
