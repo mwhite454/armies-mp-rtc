@@ -324,16 +324,36 @@ export default function GameIsland(
       ctx.textAlign = "right";
       ctx.fillText("Your spawn zone →", sz * cs - 3, 3);
     }
+
+    if (playerNum === 1) {
+      const rect = canvas.getBoundingClientRect();
+      const t = new Date().toTimeString().slice(0, 8);
+      debugEntries.value = [...debugEntries.value,
+        `[${t}] CANVAS_DRAW sz=${sz} cs=${cs} canvas=${canvas.width}×${canvas.height} cssRect=${rect.width.toFixed(0)}×${rect.height.toFixed(0)}`];
+    }
   }
 
   function onMapCanvasClick(e: MouseEvent) {
     if (spawnConfirmed.value) return;
     const canvas = mapCanvasRef.current;
     if (!canvas) return;
-    const cs = getCellSize(mapSize.value);
+    const sz = mapSize.value;
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / cs);
-    const y = Math.floor((e.clientY - rect.top) / cs);
+    if (rect.width < 4 || rect.height < 4) return;
+    // Use CSS pixel cell size (handles any canvas CSS scaling). Subtract 2px
+    // border on each side so clicks in the border don't map to out-of-bounds cells.
+    const cellW = (rect.width - 4) / sz;
+    const cellH = (rect.height - 4) / sz;
+    const x = Math.floor((e.clientX - rect.left - 2) / cellW);
+    const y = Math.floor((e.clientY - rect.top - 2) / cellH);
+
+    if (playerNum === 1) {
+      const t = new Date().toTimeString().slice(0, 8);
+      debugEntries.value = [...debugEntries.value,
+        `[${t}] CLICK raw=(${(e.clientX - rect.left).toFixed(0)},${(e.clientY - rect.top).toFixed(0)}) cssCell=${cellW.toFixed(1)}×${cellH.toFixed(1)} cssRect=${rect.width.toFixed(0)}×${rect.height.toFixed(0)} → cell(${x},${y})`];
+    }
+
+    if (x < 0 || x >= sz || y < 0 || y >= sz) return;
     if (!isInSpawnZone(x, y)) return;
 
     const cells = [...spawnCells.value];
@@ -715,9 +735,27 @@ export default function GameIsland(
 
   // ── Spawn phase ──
   if (phase.value === "spawn") {
+    const unitDefs = [
+      { name: "Leader", emoji: "👑" },
+      { name: "Heavy",  emoji: "🛡️" },
+      { name: "Sniper", emoji: "🎯" },
+      { name: "Dasher", emoji: "⚡" },
+    ] as const;
+    const placed = spawnCells.value.length;
+    const nextUnit = placed < 4 ? unitDefs[placed] : null;
+
     return (
       <div class="flex flex-col gap-4">
-        <h2 class="text-primary font-bold tracking-widest">SPAWN PHASE</h2>
+        <div class="flex items-center justify-between">
+          <h2 class="text-primary font-bold tracking-widest">SPAWN PHASE</h2>
+          {nextUnit
+            ? (
+              <span class="text-sm font-mono text-warning">
+                Next: {nextUnit.emoji} {nextUnit.name}
+              </span>
+            )
+            : <span class="text-sm font-mono text-success">All units placed ✓</span>}
+        </div>
 
         {playerNum === 1 && (
           <div class="flex items-center gap-3">
@@ -743,15 +781,37 @@ export default function GameIsland(
           </p>
         )}
 
-        <p class="text-base-content/60 text-sm font-mono">
-          {spawnCells.value.length < 4
-            ? `Click cells in your zone to place ${4 - spawnCells.value.length} more unit(s). Click placed unit to remove.`
-            : "All 4 units placed. Confirm when ready."}
+        {/* Unit placement order strip */}
+        <div class="flex gap-2">
+          {unitDefs.map((u, i) => {
+            const isPlaced = i < placed;
+            const isNext = i === placed;
+            return (
+              <div
+                key={u.name}
+                class={`flex-1 rounded border px-2 py-1 text-center text-xs font-mono transition-colors
+                  ${isPlaced ? "border-success/50 bg-success/10 text-success" : ""}
+                  ${isNext ? "border-warning bg-warning/10 text-warning animate-pulse" : ""}
+                  ${!isPlaced && !isNext ? "border-base-300 text-base-content/30" : ""}`}
+              >
+                <div class="text-base leading-none">{u.emoji}</div>
+                <div class="mt-0.5">{isPlaced ? "✓" : isNext ? "next" : "—"}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p class="text-base-content/50 text-xs font-mono">
+          {spawnConfirmed.value
+            ? "Spawn confirmed — waiting for opponent..."
+            : playerNum === 1
+            ? `Click a highlighted cell (left half) to place each unit in order. Undo to re-place.`
+            : `Click a highlighted cell (right half) to place each unit in order. Undo to re-place.`}
         </p>
 
         <canvas
           ref={mapCanvasRef}
-          style="cursor:crosshair;border:2px solid #7f7fd5;border-radius:4px"
+          style="cursor:crosshair;border:2px solid #7f7fd5;border-radius:4px;max-width:100%"
           onClick={onMapCanvasClick}
         />
 
@@ -759,7 +819,7 @@ export default function GameIsland(
           <p class="text-error text-sm font-mono">⚠️ {spawnError.value}</p>
         )}
 
-        <div class="flex gap-3 items-center">
+        <div class="flex gap-3 items-center flex-wrap">
           <button
             class="btn btn-primary"
             disabled={spawnCells.value.length !== 4 || spawnConfirmed.value}
@@ -767,6 +827,17 @@ export default function GameIsland(
           >
             {spawnConfirmed.value ? "Spawn Confirmed ✓" : "Confirm Spawn"}
           </button>
+          {!spawnConfirmed.value && spawnCells.value.length > 0 && (
+            <button
+              class="btn btn-outline btn-sm"
+              onClick={() => {
+                spawnCells.value = spawnCells.value.slice(0, -1);
+                spawnError.value = "";
+              }}
+            >
+              Undo Last
+            </button>
+          )}
           {spawnConfirmed.value && (
             <span class="text-base-content/50 text-sm flex items-center gap-2">
               <span class="loading loading-spinner loading-xs" />
