@@ -11,6 +11,14 @@ export interface UserRecord {
   elo: number;
 }
 
+// ─── Hex Grid ────────────────────────────────────────────────────────────────
+
+/** Axial (flat-top) hex coordinate. */
+export interface HexCoord {
+  q: number;
+  r: number;
+}
+
 // ─── Game Core ───────────────────────────────────────────────────────────────
 
 export type UnitType = "Leader" | "Heavy" | "Sniper" | "Dasher";
@@ -47,13 +55,14 @@ export interface Unit {
   Range: number;
   hp: number;
   maxHp: number;
-  x: number;
-  y: number;
+  q: number;
+  r: number;
   loaded: boolean;
 }
 
 export interface GameState {
-  mapSize: 8 | 12 | 16;
+  mapCols: number;
+  mapRows: number;
   turn: 1 | 2; // whose turn
   actionsLeft: number; // 0-2
   units: Unit[];
@@ -78,8 +87,9 @@ export interface RoomRecord {
   updatedAt: number;
   gameState: GameState | null;
   playerBuilds: Partial<Record<string, UnitBuild[]>>;
-  playerSpawns: Partial<Record<string, { x: number; y: number }[]>>;
-  mapSize: 8 | 12 | 16;
+  playerSpawns: Partial<Record<string, HexCoord[]>>;
+  mapCols: number;
+  mapRows: number;
   playerSlots: Partial<Record<string, 1 | 2>>;
   winnerId: string | null;
   round: number;
@@ -101,8 +111,8 @@ export interface GameHistoryRecord {
 export interface MoveAction {
   type: "move";
   unitId: string;
-  x: number;
-  y: number;
+  q: number;
+  r: number;
 }
 
 export interface ReloadAction {
@@ -124,8 +134,8 @@ export type GameAction = MoveAction | ReloadAction | FireAction;
 export type ClientMessage =
   | { type: "join_room"; code: string }
   | { type: "build_ready"; build: UnitBuild[] }
-  | { type: "map_size"; size: 8 | 12 | 16 }
-  | { type: "spawn_ready"; spawn: { x: number; y: number }[] }
+  | { type: "map_size"; mapCols: number; mapRows: number }
+  | { type: "spawn_ready"; spawn: HexCoord[] }
   | { type: "action"; action: GameAction }
   | { type: "end_turn" }
   | { type: "new_round"; rebuild: boolean }
@@ -141,12 +151,13 @@ export type ServerMessage =
     roomStatus: RoomStatus;
     opponentName: string | null;
     opponentAvatar: string | null;
-    mapSize: 8 | 12 | 16;
+    mapCols: number;
+    mapRows: number;
   }
   | { type: "player_joined"; userId: string; name: string; avatarUrl: string }
   | { type: "phase_change"; phase: RoomStatus }
   | { type: "opponent_build_ready" }
-  | { type: "map_size"; size: 8 | 12 | 16 }
+  | { type: "map_size"; mapCols: number; mapRows: number }
   | { type: "opponent_spawn_ready" }
   | { type: "game_start"; state: GameState }
   | {
@@ -156,6 +167,8 @@ export type ServerMessage =
     actorPlayerNum: 1 | 2;
   }
   | { type: "turn_change"; currentTurn: 1 | 2 }
+  | { type: "turn_timer_start"; deadline: number }
+  | { type: "turn_timeout"; playerNum: 1 | 2 }
   | { type: "game_over"; winnerPlayerNum: 1 | 2; winnerId: string }
   | { type: "new_round_start"; rebuild: boolean }
   | { type: "error"; code: string; message: string }

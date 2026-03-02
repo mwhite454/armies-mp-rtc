@@ -4,6 +4,7 @@
  */
 import type {
   GameState,
+  HexCoord,
   RoomStatus,
   ServerMessage,
   UnitBuild,
@@ -17,10 +18,12 @@ export interface ActiveRoom {
   gameState: GameState | null;
   actionsLeftThisTurn: number;
   builds: Map<string, UnitBuild[]>;
-  spawns: Map<string, { x: number; y: number }[]>;
-  mapSize: 8 | 12 | 16;
+  spawns: Map<string, HexCoord[]>;
+  mapCols: number;
+  mapRows: number;
   hostUserId: string;
   newRoundVotes: Map<string, boolean>; // userId -> rebuild?
+  turnTimerId: ReturnType<typeof setTimeout> | null;
 }
 
 const rooms = new Map<string, ActiveRoom>();
@@ -44,9 +47,11 @@ export function getOrCreateRoom(
       actionsLeftThisTurn: 2,
       builds: new Map(),
       spawns: new Map(),
-      mapSize: 12,
+      mapCols: 12,
+      mapRows: 12,
       hostUserId,
       newRoundVotes: new Map(),
+      turnTimerId: null,
     };
     rooms.set(code, room);
   }
