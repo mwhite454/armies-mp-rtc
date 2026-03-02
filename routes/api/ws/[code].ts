@@ -110,6 +110,27 @@ export const handler = define.handlers({
     room.mapCols = kvRoom.mapCols ?? 12;
     room.mapRows = kvRoom.mapRows ?? 12;
 
+    // Restore builds and spawns from KV (handles reconnect after worker eviction)
+    if (kvRoom.playerBuilds) {
+      for (const [uid, build] of Object.entries(kvRoom.playerBuilds)) {
+        if (build && !room.builds.has(uid)) {
+          room.builds.set(uid, build);
+        }
+      }
+    }
+    if (kvRoom.playerSpawns) {
+      for (const [uid, spawn] of Object.entries(kvRoom.playerSpawns)) {
+        if (spawn && !room.spawns.has(uid)) {
+          room.spawns.set(uid, spawn);
+        }
+      }
+    }
+
+    // Restore room phase from KV (handles reconnect after worker eviction)
+    if (room.phase === "lobby" && kvRoom.status !== "lobby") {
+      room.phase = kvRoom.status;
+    }
+
     // Assign player number
     const playerNum = (kvRoom.playerSlots[user.id] ?? (isHost ? 1 : 2)) as
       | 1
@@ -406,10 +427,24 @@ async function buildAndStartGame(
   const hostId = kvRoom.hostUserId;
   const guestId = kvRoom.guestUserId!;
 
-  const p1Build = room.builds.get(hostId) as UnitBuild[];
-  const p2Build = room.builds.get(guestId) as UnitBuild[];
-  const p1Spawn = room.spawns.get(hostId)!;
-  const p2Spawn = room.spawns.get(guestId)!;
+  const p1Build = room.builds.get(hostId) ?? kvRoom.playerBuilds[hostId];
+  const p2Build = room.builds.get(guestId) ?? kvRoom.playerBuilds[guestId];
+  const p1Spawn = room.spawns.get(hostId) ?? kvRoom.playerSpawns[hostId];
+  const p2Spawn = room.spawns.get(guestId) ?? kvRoom.playerSpawns[guestId];
+
+  if (!p1Build || !p2Build || !p1Spawn || !p2Spawn) {
+    console.error("buildAndStartGame: missing build/spawn data", {
+      hostId, guestId,
+      hasP1Build: !!p1Build, hasP2Build: !!p2Build,
+      hasP1Spawn: !!p1Spawn, hasP2Spawn: !!p2Spawn,
+    });
+    broadcastToAll(room, {
+      type: "error",
+      code: "MISSING_DATA",
+      message: "Game data was lost. Please restart the room.",
+    });
+    return;
+  }
 
   const p1Units = buildUnitsFromSpawn(1, p1Spawn, p1Build);
   const p2Units = buildUnitsFromSpawn(2, p2Spawn, p2Build);
