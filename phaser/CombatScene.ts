@@ -359,5 +359,6 @@ export default class CombatScene extends Phaser.Scene {
     if (bestDist > this.hexSize * this.hexSize) return;
 
     this.events.emit("hex_clicked", { q: bestQ, r: bestR } as HexCoord);
+    this.game.events.emit("hex_clicked", { q: bestQ, r: bestR } as HexCoord);
   }
 }
