@@ -59,6 +59,7 @@ export default function GameIsland(
   const currentAction = useSignal<"move" | "reload" | "fire" | null>(null);
   const isMyTurn = useSignal(false);
   const phaserRootRef = useRef<HTMLDivElement>(null);
+  const phaserGameRef = useRef<Phaser.Game | null>(null);
 
   // ── Turn timer ────────────────────────────────────────────────────────────
   const turnDeadline = useSignal<number | null>(null);
@@ -428,6 +429,74 @@ export default function GameIsland(
     renderSpawn();
   }, [phase.value, spawnPlacements.value, hoverCell.value, draggingUnit.value, mapCols.value, mapRows.value]);
 
+  // ── Phaser game initialization (combat phase) ────────────────────────────
+  useEffect(() => {
+    if (phase.value !== "combat" && phase.value !== "result") return;
+    if (phaserGameRef.current) return; // already initialised
+    const parent = phaserRootRef.current;
+    if (!parent) return;
+
+    // Dynamic import so Phaser only loads client-side
+    (async () => {
+      const [PhaserMod, { default: CombatScene }] = await Promise.all([
+        import("phaser"),
+        import("../phaser/CombatScene.ts"),
+      ]);
+      const Phaser = PhaserMod.default ?? PhaserMod;
+      const cols = gameState.value?.mapCols ?? mapCols.value;
+      const rows = gameState.value?.mapRows ?? mapRows.value;
+
+      const game = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent,
+        backgroundColor: "#0a0a1a",
+        width: 800,
+        height: 600,
+        scene: [CombatScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_HORIZONTALLY,
+        },
+        input: { activePointers: 1 },
+      });
+
+      phaserGameRef.current = game;
+
+      // Seed registry so the scene has data as soon as it creates
+      if (gameState.value) game.registry.set("gameState", gameState.value);
+      game.registry.set("selectedUnitId", selectedUnitId.value);
+      game.registry.set("currentAction", currentAction.value);
+      game.registry.set("turnDeadline", turnDeadline.value);
+      game.registry.set("turnDurationMs", turnDurationMs.value);
+      game.registry.set("timedOut", timedOut.value);
+
+      // Start the combat scene with map dimensions + player info
+      game.scene.start("CombatScene", { cols, rows, playerNum });
+
+      // Forward hex clicks from Phaser back up to the island
+      game.events.on("hex_clicked", (coord: HexCoord) => {
+        handleHexClick(coord);
+      });
+    })();
+
+    return () => {
+      phaserGameRef.current?.destroy(true);
+      phaserGameRef.current = null;
+    };
+  }, [phase.value]);
+
+  // ── Sync signals into Phaser registry ────────────────────────────────────
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game) return;
+    if (gameState.value) game.registry.set("gameState", gameState.value);
+    game.registry.set("selectedUnitId", selectedUnitId.value);
+    game.registry.set("currentAction", currentAction.value);
+    game.registry.set("turnDeadline", turnDeadline.value);
+    game.registry.set("turnDurationMs", turnDurationMs.value);
+    game.registry.set("timedOut", timedOut.value);
+  }, [gameState.value, selectedUnitId.value, currentAction.value, turnDeadline.value, turnDurationMs.value, timedOut.value]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // Spawn canvas helpers
   // ─────────────────────────────────────────────────────────────────────────
@@ -633,6 +702,55 @@ export default function GameIsland(
       return;
     }
     send({ type: "action", action: { type: "reload", unitId: unit.id } });
+  }
+
+  function handleHexClick(coord: HexCoord) {
+    if (!isMyTurn.value || !gameState.value) return;
+    const state = gameState.value;
+
+    // If no unit selected, select unit at the clicked hex (if ours)
+    if (!selectedUnitId.value) {
+      const unit = state.units.find(
+        (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
+      );
+      if (unit) {
+        selectedUnitId.value = unit.id;
+        currentAction.value = null;
+      }
+      return;
+    }
+
+    const selUnit = state.units.find((u) => u.id === selectedUnitId.value);
+    if (!selUnit) return;
+
+    if (currentAction.value === "move") {
+      send({
+        type: "action",
+        action: { type: "move", unitId: selUnit.id, q: coord.q, r: coord.r },
+      });
+    } else if (currentAction.value === "fire") {
+      // Find enemy at coord
+      const target = state.units.find(
+        (u) => u.q === coord.q && u.r === coord.r && u.player !== playerNum && u.hp > 0,
+      );
+      if (target) {
+        send({
+          type: "action",
+          action: { type: "fire", unitId: selUnit.id, targetId: target.id },
+        });
+      }
+    } else {
+      // No action mode — try selecting a different own unit or deselect
+      const clicked = state.units.find(
+        (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
+      );
+      if (clicked) {
+        selectedUnitId.value = clicked.id;
+      } else {
+        selectedUnitId.value = null;
+      }
+      currentAction.value = null;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

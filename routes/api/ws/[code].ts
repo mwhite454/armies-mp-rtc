@@ -13,7 +13,7 @@ import {
   broadcastToAll,
   generateRoomCode as _unused,
   getOrCreateRoom,
-  getRoom,
+  getRoom as _getRoom,
   registerSocket,
   sendToUser,
   unregisterSocket,
@@ -25,7 +25,7 @@ import type {
   ClientMessage,
   GameState,
   RoomRecord,
-  UnitBuild,
+  UnitBuild as _UnitBuild,
 } from "../../../lib/types.ts";
 
 const TURN_TIMER_MS = 60_000;
@@ -236,6 +236,7 @@ export const handler = define.handlers({
           }
           room.builds.set(user.id, msg.build);
           kvRoom.playerBuilds[user.id] = msg.build;
+          await saveRoom(kvRoom);
 
           // Notify opponent
           broadcast(room, { type: "opponent_build_ready" }, user.id);
@@ -286,6 +287,7 @@ export const handler = define.handlers({
           }
           room.spawns.set(user.id, msg.spawn);
           kvRoom.playerSpawns[user.id] = msg.spawn;
+          await saveRoom(kvRoom);
 
           broadcast(room, { type: "opponent_spawn_ready" }, user.id);
 
@@ -424,8 +426,31 @@ async function buildAndStartGame(
   room: ReturnType<typeof getOrCreateRoom>,
   kvRoom: RoomRecord,
 ): Promise<void> {
-  const hostId = kvRoom.hostUserId;
-  const guestId = kvRoom.guestUserId!;
+  // Resolve player IDs from the always-up-to-date in-memory playerNums map
+  // instead of relying on kvRoom.guestUserId which may be stale in the host's closure.
+  let hostId: string | undefined;
+  let guestId: string | undefined;
+  for (const [uid, pnum] of room.playerNums) {
+    if (pnum === 1) hostId = uid;
+    if (pnum === 2) guestId = uid;
+  }
+
+  if (!hostId || !guestId) {
+    console.error("buildAndStartGame: could not resolve both player IDs", {
+      playerNums: Object.fromEntries(room.playerNums),
+    });
+    broadcastToAll(room, {
+      type: "error",
+      code: "MISSING_DATA",
+      message: "Game data was lost. Please restart the room.",
+    });
+    return;
+  }
+
+  // Sync kvRoom.guestUserId if it was stale (host connected before guest)
+  if (!kvRoom.guestUserId) {
+    kvRoom.guestUserId = guestId;
+  }
 
   const p1Build = room.builds.get(hostId) ?? kvRoom.playerBuilds[hostId];
   const p2Build = room.builds.get(guestId) ?? kvRoom.playerBuilds[guestId];
