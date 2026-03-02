@@ -24,6 +24,7 @@ export interface ActiveRoom {
   hostUserId: string;
   newRoundVotes: Map<string, boolean>; // userId -> rebuild?
   turnTimerId: ReturnType<typeof setTimeout> | null;
+  turnDeadline: number | null;
 }
 
 const rooms = new Map<string, ActiveRoom>();
@@ -52,6 +53,7 @@ export function getOrCreateRoom(
       hostUserId,
       newRoundVotes: new Map(),
       turnTimerId: null,
+      turnDeadline: null,
     };
     rooms.set(code, room);
   }

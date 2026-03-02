@@ -63,6 +63,7 @@ export default function GameIsland(
 
   // ── Turn timer ────────────────────────────────────────────────────────────
   const turnDeadline = useSignal<number | null>(null);
+  const turnDurationMs = useSignal<number>(60_000);
   const timedOut = useSignal(false);
   const gameOver = useSignal<{ winnerPlayerNum: 1 | 2; winnerId: string } | null>(null);
   const newRoundVoted = useSignal(false);
@@ -228,6 +229,7 @@ export default function GameIsland(
 
       case "turn_timer_start":
         turnDeadline.value = msg.deadline;
+        turnDurationMs.value = msg.turnDurationMs;
         timedOut.value = false;
         break;
 
@@ -336,67 +338,65 @@ export default function GameIsland(
           const realScene = new SceneClass();
           this.scene.add(sceneKey + "_real", realScene, true, initData);
           this.scene.remove(sceneKey);  // remove this bootstrap scene
+
+          // Wire registry + events once the real scene's create lifecycle runs
+          realScene.events.once("create", () => {
+            if (sceneKey === "SpawnScene") {
+              // Push initial spawn cells
+              game.registry.set("spawnCells", spawnCells.value);
+              game.registry.set("mapSize", { cols: mapCols.value, rows: mapRows.value });
+
+              // Scene emits hex_clicked → island handles add/remove
+              realScene.events.on("hex_clicked", (coord: HexCoord) => {
+                if (spawnConfirmed.value) return;
+                const cells = [...spawnCells.value];
+                const idx = cells.findIndex((c) => c.q === coord.q && c.r === coord.r);
+                if (idx >= 0) cells.splice(idx, 1);
+                else if (cells.length < 4) cells.push(coord);
+                spawnCells.value = cells;
+                spawnError.value = "";
+                game.registry.set("spawnCells", cells);
+              });
+            }
+
+            if (sceneKey === "CombatScene") {
+              // Push initial state
+              if (gameState.value) game.registry.set("gameState", gameState.value);
+              game.registry.set("selectedUnitId", selectedUnitId.value);
+              game.registry.set("currentAction", currentAction.value);
+              if (turnDeadline.value) game.registry.set("turnDeadline", turnDeadline.value);
+              game.registry.set("turnDurationMs", turnDurationMs.value);
+              game.registry.set("timedOut", timedOut.value);
+
+              // Scene emits hex_clicked → island dispatches action
+              realScene.events.on("hex_clicked", (coord: HexCoord) => {
+                const state = gameState.value;
+                if (!state || !isMyTurn.value || !selectedUnitId.value || !currentAction.value) return;
+                const unit = state.units.find((u) => u.id === selectedUnitId.value);
+                if (!unit) return;
+
+                let action: GameAction | null = null;
+                if (currentAction.value === "move") {
+                  action = { type: "move", unitId: unit.id, q: coord.q, r: coord.r };
+                } else if (currentAction.value === "fire") {
+                  const target = state.units.find(
+                    (t) => t.q === coord.q && t.r === coord.r && t.hp > 0,
+                  );
+                  if (!target) {
+                    addLog("No target at that cell.", "sys");
+                    return;
+                  }
+                  action = { type: "fire", unitId: unit.id, targetId: target.id };
+                }
+                if (action) send({ type: "action", action });
+              });
+            }
+          });
         },
       },
     });
 
     phaserGameRef.current = game;
-
-    // Wait one tick for the scene to be ready, then wire registry + events
-    setTimeout(() => {
-      const scn = game.scene.getScene(sceneKey + "_real");
-      if (!scn) return;
-
-      if (sceneKey === "SpawnScene") {
-        // Push initial spawn cells
-        game.registry.set("spawnCells", spawnCells.value);
-        game.registry.set("mapSize", { cols: mapCols.value, rows: mapRows.value });
-
-        // Scene emits hex_clicked → island handles add/remove
-        scn.events.on("hex_clicked", (coord: HexCoord) => {
-          if (spawnConfirmed.value) return;
-          const cells = [...spawnCells.value];
-          const idx = cells.findIndex((c) => c.q === coord.q && c.r === coord.r);
-          if (idx >= 0) cells.splice(idx, 1);
-          else if (cells.length < 4) cells.push(coord);
-          spawnCells.value = cells;
-          spawnError.value = "";
-          game.registry.set("spawnCells", cells);
-        });
-      }
-
-      if (sceneKey === "CombatScene") {
-        // Push initial state
-        if (gameState.value) game.registry.set("gameState", gameState.value);
-        game.registry.set("selectedUnitId", selectedUnitId.value);
-        game.registry.set("currentAction", currentAction.value);
-        if (turnDeadline.value) game.registry.set("turnDeadline", turnDeadline.value);
-        game.registry.set("timedOut", timedOut.value);
-
-        // Scene emits hex_clicked → island dispatches action
-        scn.events.on("hex_clicked", (coord: HexCoord) => {
-          const state = gameState.value;
-          if (!state || !isMyTurn.value || !selectedUnitId.value || !currentAction.value) return;
-          const unit = state.units.find((u) => u.id === selectedUnitId.value);
-          if (!unit) return;
-
-          let action: GameAction | null = null;
-          if (currentAction.value === "move") {
-            action = { type: "move", unitId: unit.id, q: coord.q, r: coord.r };
-          } else if (currentAction.value === "fire") {
-            const target = state.units.find(
-              (t) => t.q === coord.q && t.r === coord.r && t.hp > 0,
-            );
-            if (!target) {
-              addLog("No target at that cell.", "sys");
-              return;
-            }
-            action = { type: "fire", unitId: unit.id, targetId: target.id };
-          }
-          if (action) send({ type: "action", action });
-        });
-      }
-    }, 100);
   }
 
   // ── Boot / destroy Phaser when phase changes ──────────────────────────────
@@ -451,6 +451,12 @@ export default function GameIsland(
     if (!game || phase.value !== "combat") return;
     game.registry.set("turnDeadline", turnDeadline.value);
   }, [turnDeadline.value]);
+
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("turnDurationMs", turnDurationMs.value);
+  }, [turnDurationMs.value]);
 
   useEffect(() => {
     const game = phaserGameRef.current;
