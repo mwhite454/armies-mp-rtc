@@ -5,7 +5,7 @@
  * move/fire range overlays, and a turn timer bar.
  * Reacts to GameState changes pushed through `scene.registry`.
  */
-import * as Phaser from "phaser";
+import Phaser from "phaser";
 import { hexDimensions, hexRange, hexToPixel } from "../lib/hex-pixels.ts";
 import type { GameState, HexCoord, Unit } from "../lib/types.ts";
 
