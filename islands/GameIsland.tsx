@@ -11,8 +11,6 @@ import type {
 import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
 import { hexToPixel, pixelToHex, gridPixelSize } from "../lib/hex-pixels.ts";
-import type * as Phaser from "phaser";
-
 interface GameIslandProps {
   roomCode: string;
   userId: string;
@@ -78,9 +76,151 @@ export default function GameIsland(
   const debugOpen = useSignal(false);
   const debugRef = useRef<HTMLDivElement>(null);
 
+  // ── Phaser game instance ──────────────────────────────────────────────────
+  const phaserGameRef = useRef<{ destroy(removeCanvas: boolean): void } | null>(null);
+
   function addLog(text: string, kind: LogLine["kind"] = "sys") {
     logLines.value = [...logLines.value, { text, kind }];
   }
+
+  // ── Phaser combat scene lifecycle ─────────────────────────────────────────
+  useEffect(() => {
+    if (phase.value !== "combat" && phase.value !== "result") return;
+    if (phaserGameRef.current) return; // already initialised
+    const root = phaserRootRef.current;
+    if (!root) return;
+
+    let destroyed = false;
+
+    (async () => {
+      // Dynamic import keeps Phaser out of the SSR bundle
+      const Phaser = (await import("phaser")).default ?? await import("phaser");
+      const { default: CombatScene } = await import("../phaser/CombatScene.ts");
+
+      if (destroyed) return;
+
+      const cols = mapCols.value;
+      const rows = mapRows.value;
+      const hexSize = 32;
+      const PAD = 40;
+      // Approximate canvas dims (matches CombatScene.canvasSize logic)
+      const lastPx = hexToPixel(cols - 1, rows - 1, hexSize);
+      const estW = lastPx.px + PAD * 2 + hexSize;
+      const estH = lastPx.py + PAD * 2 + hexSize;
+
+      const game = new Phaser.Game({
+        type: Phaser.AUTO,
+        width: estW,
+        height: estH,
+        parent: root,
+        backgroundColor: "#0a0a1a",
+        scene: [CombatScene],
+        scale: { mode: Phaser.Scale.NONE },
+      });
+      phaserGameRef.current = game;
+
+      // Wait for the scene to be ready, then push initial state
+      game.events.once("ready", () => {
+        if (destroyed) return;
+        const scene = game.scene.getScene("CombatScene");
+        if (!scene) return;
+
+        // Push initial registry values
+        scene.registry.set("gameState", gameState.value);
+        scene.registry.set("selectedUnitId", selectedUnitId.value);
+        scene.registry.set("currentAction", currentAction.value);
+        scene.registry.set("turnDeadline", turnDeadline.value);
+        scene.registry.set("turnDurationMs", turnDurationMs.value);
+        scene.registry.set("timedOut", timedOut.value);
+
+        // Listen for hex clicks from CombatScene
+        scene.events.on("hex_clicked", (coord: HexCoord) => {
+          if (!isMyTurn.value || !selectedUnitId.value) return;
+          const state = gameState.value;
+          if (!state) return;
+
+          if (currentAction.value === "move") {
+            send({
+              type: "action",
+              action: { type: "move", unitId: selectedUnitId.value, q: coord.q, r: coord.r },
+            });
+          } else if (currentAction.value === "fire") {
+            const target = state.units.find(
+              (u) => u.q === coord.q && u.r === coord.r && u.player !== playerNum && u.hp > 0,
+            );
+            if (target) {
+              send({
+                type: "action",
+                action: { type: "fire", unitId: selectedUnitId.value, targetId: target.id },
+              });
+            }
+          } else {
+            // No action selected — clicking a hex selects our unit on it
+            const ownUnit = state.units.find(
+              (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
+            );
+            if (ownUnit) {
+              selectedUnitId.value = selectedUnitId.value === ownUnit.id ? null : ownUnit.id;
+              currentAction.value = null;
+            }
+          }
+        });
+
+        // Start the scene with init data
+        scene.scene.restart({ cols, rows, playerNum });
+      });
+    })();
+
+    return () => {
+      destroyed = true;
+      if (phaserGameRef.current) {
+        phaserGameRef.current.destroy(true);
+        phaserGameRef.current = null;
+      }
+    };
+  }, [phase.value]);
+
+  // ── Sync signals → Phaser registry ────────────────────────────────────────
+  useEffect(() => {
+    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
+    if (!game) return;
+    const scene = game.scene.getScene("CombatScene");
+    if (!scene) return;
+    scene.registry.set("gameState", gameState.value);
+  }, [gameState.value]);
+
+  useEffect(() => {
+    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
+    if (!game) return;
+    const scene = game.scene.getScene("CombatScene");
+    if (!scene) return;
+    scene.registry.set("selectedUnitId", selectedUnitId.value);
+  }, [selectedUnitId.value]);
+
+  useEffect(() => {
+    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
+    if (!game) return;
+    const scene = game.scene.getScene("CombatScene");
+    if (!scene) return;
+    scene.registry.set("currentAction", currentAction.value);
+  }, [currentAction.value]);
+
+  useEffect(() => {
+    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
+    if (!game) return;
+    const scene = game.scene.getScene("CombatScene");
+    if (!scene) return;
+    scene.registry.set("turnDeadline", turnDeadline.value);
+    scene.registry.set("turnDurationMs", turnDurationMs.value);
+  }, [turnDeadline.value, turnDurationMs.value]);
+
+  useEffect(() => {
+    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
+    if (!game) return;
+    const scene = game.scene.getScene("CombatScene");
+    if (!scene) return;
+    scene.registry.set("timedOut", timedOut.value);
+  }, [timedOut.value]);
 
   // ── WebSocket setup ───────────────────────────────────────────────────────
   useEffect(() => {
