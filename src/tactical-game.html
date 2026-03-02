@@ -1,919 +1,1384 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tactical Grid — P2P Multiplayer</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#1a1a2e;color:#e0e0e0;font-family:'Courier New',monospace;min-height:100vh}
-  #app{display:flex;flex-direction:column;align-items:center;padding:10px;gap:10px}
-  h1{color:#7f7fd5;font-size:1.4em;letter-spacing:2px}
-  .panel{background:#16213e;border:1px solid #7f7fd5;border-radius:8px;padding:16px;max-width:900px;width:100%}
-  .panel h2{color:#7f7fd5;margin-bottom:10px;font-size:1em;letter-spacing:1px}
-  button{background:#7f7fd5;color:#1a1a2e;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:bold;font-size:.85em}
-  button:hover{background:#a0a0ff}
-  button:disabled{background:#444;color:#888;cursor:not-allowed}
-  input{background:#0f3460;border:1px solid #7f7fd5;color:#e0e0e0;padding:6px 10px;border-radius:4px;font-family:inherit;font-size:.9em}
-  .flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .flex-col{display:flex;flex-direction:column;gap:8px}
-  /* Connection */
-  #conn-section .status{font-size:.85em;color:#86efac;margin-top:6px}
-  /* Economy */
-  .unit-card{background:#0f3460;border:1px solid #334;border-radius:6px;padding:10px;flex:1;min-width:180px}
-  .unit-card h3{color:#fbbf24;margin-bottom:6px;font-size:.9em}
-  .stat-row{display:flex;align-items:center;gap:6px;margin:3px 0}
-  .stat-row label{width:65px;font-size:.8em;color:#aaa}
-  .stat-row input[type=number]{width:55px;text-align:center}
-  .stat-row span{font-size:.75em;color:#7f7fd5}
-  .budget{font-size:.95em;color:#86efac;font-weight:bold}
-  .budget.over{color:#f87171}
-  /* Map */
-  #map-canvas{border:2px solid #7f7fd5;border-radius:4px;cursor:crosshair}
-  /* Game HUD */
-  #hud{display:flex;gap:10px;flex-wrap:wrap;max-width:900px;width:100%}
-  #game-info{flex:1;min-width:200px}
-  .turn-indicator{font-size:1em;color:#fbbf24;margin-bottom:6px}
-  .unit-list{display:flex;flex-direction:column;gap:4px}
-  .unit-item{background:#0f3460;border:1px solid #334;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:.8em;transition:border .1s}
-  .unit-item:hover{border-color:#7f7fd5}
-  .unit-item.selected{border-color:#fbbf24;background:#1a3a60}
-  .unit-item.dead{opacity:.4;cursor:not-allowed}
-  .unit-item .uname{color:#fbbf24;font-weight:bold}
-  .unit-item .ustats{color:#aaa;font-size:.75em}
-  .hp-bar{height:5px;background:#333;border-radius:2px;margin-top:3px}
-  .hp-fill{height:100%;border-radius:2px;transition:width .3s}
-  #action-panel{background:#16213e;border:1px solid #7f7fd5;border-radius:8px;padding:10px;min-width:160px}
-  #action-panel h3{color:#7f7fd5;font-size:.85em;margin-bottom:8px}
-  .action-btn{width:100%;margin-bottom:5px;font-size:.8em}
-  .action-btn.active{background:#fbbf24;color:#1a1a2e}
-  #log{max-width:900px;width:100%;background:#0a0a1a;border:1px solid #334;border-radius:6px;padding:8px;max-height:100px;overflow-y:auto;font-size:.75em}
-  .log-line{margin:1px 0;color:#aaa}
-  .log-line.p1{color:#7f7fd5}
-  .log-line.p2{color:#f97316}
-  .log-line.sys{color:#86efac}
-  #overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100}
-  .overlay-box{background:#16213e;border:2px solid #7f7fd5;border-radius:12px;padding:30px;text-align:center;max-width:400px}
-  .overlay-box h2{color:#fbbf24;font-size:1.5em;margin-bottom:15px}
-  .overlay-box p{color:#aaa;margin-bottom:20px}
-  #spawn-hint{font-size:.8em;color:#86efac;margin-top:4px}
-  .range-info{font-size:.72em;color:#888;margin-top:6px}
-</style>
-</head>
-<body>
-<div id="app">
-  <h1>⚔ TACTICAL GRID</h1>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactical Grid — P2P Multiplayer</title>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"
+    ></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: #1a1a2e;
+        color: #e0e0e0;
+        font-family: "Courier New", monospace;
+        min-height: 100vh;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px;
+        gap: 10px;
+      }
+      h1 {
+        color: #7f7fd5;
+        font-size: 1.4em;
+        letter-spacing: 2px;
+      }
+      .panel {
+        background: #16213e;
+        border: 1px solid #7f7fd5;
+        border-radius: 8px;
+        padding: 16px;
+        max-width: 900px;
+        width: 100%;
+      }
+      .panel h2 {
+        color: #7f7fd5;
+        margin-bottom: 10px;
+        font-size: 1em;
+        letter-spacing: 1px;
+      }
+      button {
+        background: #7f7fd5;
+        color: #1a1a2e;
+        border: none;
+        padding: 8px 18px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+        font-weight: bold;
+        font-size: 0.85em;
+      }
+      button:hover {
+        background: #a0a0ff;
+      }
+      button:disabled {
+        background: #444;
+        color: #888;
+        cursor: not-allowed;
+      }
+      input {
+        background: #0f3460;
+        border: 1px solid #7f7fd5;
+        color: #e0e0e0;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.9em;
+      }
+      .flex {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .flex-col {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      /* Connection */
+      #conn-section .status {
+        font-size: 0.85em;
+        color: #86efac;
+        margin-top: 6px;
+      }
+      /* Economy */
+      .unit-card {
+        background: #0f3460;
+        border: 1px solid #334;
+        border-radius: 6px;
+        padding: 10px;
+        flex: 1;
+        min-width: 180px;
+      }
+      .unit-card h3 {
+        color: #fbbf24;
+        margin-bottom: 6px;
+        font-size: 0.9em;
+      }
+      .stat-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 3px 0;
+      }
+      .stat-row label {
+        width: 65px;
+        font-size: 0.8em;
+        color: #aaa;
+      }
+      .stat-row input[type="number"] {
+        width: 55px;
+        text-align: center;
+      }
+      .stat-row span {
+        font-size: 0.75em;
+        color: #7f7fd5;
+      }
+      .budget {
+        font-size: 0.95em;
+        color: #86efac;
+        font-weight: bold;
+      }
+      .budget.over {
+        color: #f87171;
+      }
+      /* Map */
+      #map-canvas {
+        border: 2px solid #7f7fd5;
+        border-radius: 4px;
+        cursor: crosshair;
+      }
+      /* Game HUD */
+      #hud {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        max-width: 900px;
+        width: 100%;
+      }
+      #game-info {
+        flex: 1;
+        min-width: 200px;
+      }
+      .turn-indicator {
+        font-size: 1em;
+        color: #fbbf24;
+        margin-bottom: 6px;
+      }
+      .unit-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .unit-item {
+        background: #0f3460;
+        border: 1px solid #334;
+        border-radius: 4px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 0.8em;
+        transition: border 0.1s;
+      }
+      .unit-item:hover {
+        border-color: #7f7fd5;
+      }
+      .unit-item.selected {
+        border-color: #fbbf24;
+        background: #1a3a60;
+      }
+      .unit-item.dead {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .unit-item .uname {
+        color: #fbbf24;
+        font-weight: bold;
+      }
+      .unit-item .ustats {
+        color: #aaa;
+        font-size: 0.75em;
+      }
+      .hp-bar {
+        height: 5px;
+        background: #333;
+        border-radius: 2px;
+        margin-top: 3px;
+      }
+      .hp-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+      #action-panel {
+        background: #16213e;
+        border: 1px solid #7f7fd5;
+        border-radius: 8px;
+        padding: 10px;
+        min-width: 160px;
+      }
+      #action-panel h3 {
+        color: #7f7fd5;
+        font-size: 0.85em;
+        margin-bottom: 8px;
+      }
+      .action-btn {
+        width: 100%;
+        margin-bottom: 5px;
+        font-size: 0.8em;
+      }
+      .action-btn.active {
+        background: #fbbf24;
+        color: #1a1a2e;
+      }
+      #log {
+        max-width: 900px;
+        width: 100%;
+        background: #0a0a1a;
+        border: 1px solid #334;
+        border-radius: 6px;
+        padding: 8px;
+        max-height: 100px;
+        overflow-y: auto;
+        font-size: 0.75em;
+      }
+      .log-line {
+        margin: 1px 0;
+        color: #aaa;
+      }
+      .log-line.p1 {
+        color: #7f7fd5;
+      }
+      .log-line.p2 {
+        color: #f97316;
+      }
+      .log-line.sys {
+        color: #86efac;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      .overlay-box {
+        background: #16213e;
+        border: 2px solid #7f7fd5;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        max-width: 400px;
+      }
+      .overlay-box h2 {
+        color: #fbbf24;
+        font-size: 1.5em;
+        margin-bottom: 15px;
+      }
+      .overlay-box p {
+        color: #aaa;
+        margin-bottom: 20px;
+      }
+      #spawn-hint {
+        font-size: 0.8em;
+        color: #86efac;
+        margin-top: 4px;
+      }
+      .range-info {
+        font-size: 0.72em;
+        color: #888;
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <h1>⚔ TACTICAL GRID</h1>
 
-  <!-- CONNECTION PANEL -->
-  <div class="panel" id="conn-section">
-    <h2>📡 P2P CONNECTION</h2>
-    <div class="flex">
-      <div class="flex-col">
-        <span style="font-size:.8em;color:#aaa">Your Peer ID (share with opponent):</span>
+      <!-- CONNECTION PANEL -->
+      <div class="panel" id="conn-section">
+        <h2>📡 P2P CONNECTION</h2>
         <div class="flex">
-          <input id="my-peer-id" readonly style="width:220px" placeholder="Generating...">
-          <button onclick="copyPeerId()">Copy</button>
+          <div class="flex-col">
+            <span style="font-size: 0.8em; color: #aaa"
+            >Your Peer ID (share with opponent):</span>
+            <div class="flex">
+              <input
+                id="my-peer-id"
+                readonly
+                style="width: 220px"
+                placeholder="Generating..."
+              >
+              <button onclick="copyPeerId()">Copy</button>
+            </div>
+          </div>
+          <div class="flex-col">
+            <span style="font-size: 0.8em; color: #aaa"
+            >Connect to opponent:</span>
+            <div class="flex">
+              <input
+                id="remote-peer-id"
+                placeholder="Paste opponent ID"
+                style="width: 220px"
+              >
+              <button onclick="connectToPeer()">Connect</button>
+            </div>
+          </div>
+        </div>
+        <div class="status" id="conn-status">Initializing peer...</div>
+      </div>
+
+      <!-- ECONOMY PANEL -->
+      <div class="panel" id="economy-section" style="display: none">
+        <h2>💰 STAT ECONOMY — 40 Points Total</h2>
+        <div class="flex" style="margin-bottom: 10px">
+          <div class="budget" id="budget-display">Points Remaining: 40</div>
+          <span style="font-size: 0.75em; color: #888"
+          >Max 75% (30pts) per unit · Min 1 per stat</span>
+        </div>
+        <div class="flex" id="unit-cards"></div>
+        <div style="margin-top: 12px" class="flex">
+          <button onclick="randomizeStats()">🎲 Randomize</button>
+          <button onclick="confirmEconomy()" id="confirm-eco-btn">
+            ✔ Confirm Build
+          </button>
+        </div>
+        <div
+          id="eco-error"
+          style="color: #f87171; font-size: 0.8em; margin-top: 6px"
+        >
         </div>
       </div>
-      <div class="flex-col">
-        <span style="font-size:.8em;color:#aaa">Connect to opponent:</span>
-        <div class="flex">
-          <input id="remote-peer-id" placeholder="Paste opponent ID" style="width:220px">
-          <button onclick="connectToPeer()">Connect</button>
+
+      <!-- MAP SETUP PANEL -->
+      <div class="panel" id="map-section" style="display: none">
+        <h2>🗺 MAP SETUP</h2>
+        <div class="flex" style="margin-bottom: 8px">
+          <label style="font-size: 0.85em">Map Size:</label>
+          <select
+            id="map-size-select"
+            style="background: #0f3460; color: #e0e0e0; border: 1px solid #7f7fd5; padding: 5px; border-radius: 4px; font-family: inherit"
+            onchange="onMapSizeChange()"
+          >
+            <option value="8">Small (8×8)</option>
+            <option value="12" selected>Medium (12×12)</option>
+            <option value="16">Large (16×16)</option>
+          </select>
+          <span
+            id="map-role-label"
+            style="font-size: 0.8em; color: #fbbf24"
+          ></span>
+        </div>
+        <canvas id="map-canvas"></canvas>
+        <div id="spawn-hint"></div>
+        <div style="margin-top: 8px" class="flex">
+          <button onclick="confirmSpawn()" id="confirm-spawn-btn" disabled>
+            ✔ Confirm Spawn
+          </button>
+        </div>
+      </div>
+
+      <!-- GAME HUD -->
+      <div id="hud" style="display: none">
+        <div id="game-info" class="panel">
+          <div class="turn-indicator" id="turn-label">Turn: —</div>
+          <div style="display: flex; gap: 20px">
+            <div style="flex: 1">
+              <div
+                style="font-size: 0.75em; color: #7f7fd5; margin-bottom: 4px"
+              >
+                YOU (P<span id="my-pnum"></span>)
+              </div>
+              <div class="unit-list" id="my-units"></div>
+            </div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 0.75em; color: #f97316; margin-bottom: 4px"
+              >
+                OPPONENT
+              </div>
+              <div class="unit-list" id="opp-units"></div>
+            </div>
+          </div>
+        </div>
+        <div id="action-panel">
+          <h3>ACTIONS</h3>
+          <div
+            id="actions-remaining"
+            style="font-size: 0.75em; color: #fbbf24; margin-bottom: 6px"
+          >
+            Actions: 2/2
+          </div>
+          <button class="action-btn" id="btn-move" onclick="setAction('move')">
+            🚶 Move
+          </button>
+          <button
+            class="action-btn"
+            id="btn-reload"
+            onclick="setAction('reload')"
+          >
+            🔄 Reload
+          </button>
+          <button class="action-btn" id="btn-fire" onclick="setAction('fire')">
+            🎯 Fire/Heal
+          </button>
+          <hr style="border-color: #334; margin: 6px 0">
+          <button class="action-btn" onclick="endTurn()" id="btn-endturn">
+            ⏭ End Turn
+          </button>
+          <div class="range-info" id="range-info"></div>
+        </div>
+      </div>
+
+      <canvas
+        id="game-canvas"
+        style="display: none; border: 2px solid #7f7fd5; border-radius: 4px"
+      ></canvas>
+      <div id="log" style="display: none"></div>
+    </div>
+
+    <div id="overlay" style="display: none">
+      <div class="overlay-box">
+        <h2 id="overlay-title"></h2>
+        <p id="overlay-msg"></p>
+        <div class="flex" style="justify-content: center; gap: 10px">
+          <button onclick="newRound(false)">🔄 New Round (Keep Build)</button>
+          <button onclick="newRound(true)">🆕 New Round (Rebuild)</button>
         </div>
       </div>
     </div>
-    <div class="status" id="conn-status">Initializing peer...</div>
-  </div>
 
-  <!-- ECONOMY PANEL -->
-  <div class="panel" id="economy-section" style="display:none">
-    <h2>💰 STAT ECONOMY — 40 Points Total</h2>
-    <div class="flex" style="margin-bottom:10px">
-      <div class="budget" id="budget-display">Points Remaining: 40</div>
-      <span style="font-size:.75em;color:#888">Max 75% (30pts) per unit · Min 1 per stat</span>
-    </div>
-    <div class="flex" id="unit-cards"></div>
-    <div style="margin-top:12px" class="flex">
-      <button onclick="randomizeStats()">🎲 Randomize</button>
-      <button onclick="confirmEconomy()" id="confirm-eco-btn">✔ Confirm Build</button>
-    </div>
-    <div id="eco-error" style="color:#f87171;font-size:.8em;margin-top:6px"></div>
-  </div>
+    <script>
+      // ─────────────────────────────────────────────
+      //  CONSTANTS
+      // ─────────────────────────────────────────────
+      const TOTAL_POINTS = 40;
+      const MAX_PER_UNIT = 30; // 75% of 40
+      const UNIT_DEFS = [
+        { name: "Leader", emoji: "👑", color: "#7f7fd5" },
+        { name: "Heavy", emoji: "🛡", color: "#f97316" },
+        { name: "Sniper", emoji: "🎯", color: "#86efac" },
+        { name: "Dasher", emoji: "💨", color: "#fbbf24" },
+      ];
+      const STATS = ["Move", "Health", "Damage", "Range"];
 
-  <!-- MAP SETUP PANEL -->
-  <div class="panel" id="map-section" style="display:none">
-    <h2>🗺 MAP SETUP</h2>
-    <div class="flex" style="margin-bottom:8px">
-      <label style="font-size:.85em">Map Size:</label>
-      <select id="map-size-select" style="background:#0f3460;color:#e0e0e0;border:1px solid #7f7fd5;padding:5px;border-radius:4px;font-family:inherit" onchange="onMapSizeChange()">
-        <option value="8">Small (8×8)</option>
-        <option value="12" selected>Medium (12×12)</option>
-        <option value="16">Large (16×16)</option>
-      </select>
-      <span id="map-role-label" style="font-size:.8em;color:#fbbf24"></span>
-    </div>
-    <canvas id="map-canvas"></canvas>
-    <div id="spawn-hint"></div>
-    <div style="margin-top:8px" class="flex">
-      <button onclick="confirmSpawn()" id="confirm-spawn-btn" disabled>✔ Confirm Spawn</button>
-    </div>
-  </div>
+      // ─────────────────────────────────────────────
+      //  STATE
+      // ─────────────────────────────────────────────
+      let peer, conn;
+      let myPeerNum = 0; // 1 or 2, assigned during handshake
+      let gamePhase = "connect"; // connect | economy | mapsetup | combat
+      let myBuild = null; // array of 4 units with stats
+      let myBuildConfirmed = false;
+      let oppBuildConfirmed = false;
+      let oppBuild = null;
 
-  <!-- GAME HUD -->
-  <div id="hud" style="display:none">
-    <div id="game-info" class="panel">
-      <div class="turn-indicator" id="turn-label">Turn: —</div>
-      <div style="display:flex;gap:20px">
-        <div style="flex:1">
-          <div style="font-size:.75em;color:#7f7fd5;margin-bottom:4px">YOU (P<span id="my-pnum"></span>)</div>
-          <div class="unit-list" id="my-units"></div>
-        </div>
-        <div style="flex:1">
-          <div style="font-size:.75em;color:#f97316;margin-bottom:4px">OPPONENT</div>
-          <div class="unit-list" id="opp-units"></div>
-        </div>
-      </div>
-    </div>
-    <div id="action-panel">
-      <h3>ACTIONS</h3>
-      <div id="actions-remaining" style="font-size:.75em;color:#fbbf24;margin-bottom:6px">Actions: 2/2</div>
-      <button class="action-btn" id="btn-move" onclick="setAction('move')">🚶 Move</button>
-      <button class="action-btn" id="btn-reload" onclick="setAction('reload')">🔄 Reload</button>
-      <button class="action-btn" id="btn-fire" onclick="setAction('fire')">🎯 Fire/Heal</button>
-      <hr style="border-color:#334;margin:6px 0">
-      <button class="action-btn" onclick="endTurn()" id="btn-endturn">⏭ End Turn</button>
-      <div class="range-info" id="range-info"></div>
-    </div>
-  </div>
+      // Map / spawn
+      let mapSize = 12;
+      let mySpawnCells = []; // array of {x,y} chosen spawn
+      let oppSpawnCells = [];
+      let mySpawnConfirmed = false;
+      let oppSpawnConfirmed = false;
+      let mapSizeConfirmed = false;
+      let hostMapSize = 12;
 
-  <canvas id="game-canvas" style="display:none;border:2px solid #7f7fd5;border-radius:4px"></canvas>
-  <div id="log" style="display:none"></div>
-</div>
+      // Combat state
+      let gameState = null; // full game state
+      let myTurn = false;
+      let selectedUnitIdx = null;
+      let currentAction = null; // 'move'|'reload'|'fire'
+      let actionsLeft = 2;
 
-<div id="overlay" style="display:none">
-  <div class="overlay-box">
-    <h2 id="overlay-title"></h2>
-    <p id="overlay-msg"></p>
-    <div class="flex" style="justify-content:center;gap:10px">
-      <button onclick="newRound(false)">🔄 New Round (Keep Build)</button>
-      <button onclick="newRound(true)">🆕 New Round (Rebuild)</button>
-    </div>
-  </div>
-</div>
+      // Canvas
+      let cellSize = 48;
+      let mapCanvas, mapCtx, gameCanvas, gameCtx;
 
-<script>
-// ─────────────────────────────────────────────
-//  CONSTANTS
-// ─────────────────────────────────────────────
-const TOTAL_POINTS = 40;
-const MAX_PER_UNIT = 30; // 75% of 40
-const UNIT_DEFS = [
-  {name:'Leader',  emoji:'👑', color:'#7f7fd5'},
-  {name:'Heavy',   emoji:'🛡', color:'#f97316'},
-  {name:'Sniper',  emoji:'🎯', color:'#86efac'},
-  {name:'Dasher',  emoji:'💨', color:'#fbbf24'},
-];
-const STATS = ['Move','Health','Damage','Range'];
+      // ─────────────────────────────────────────────
+      //  PEER SETUP
+      // ─────────────────────────────────────────────
+      function initPeer() {
+        peer = new Peer(undefined, { debug: 1 });
+        peer.on("open", (id) => {
+          document.getElementById("my-peer-id").value = id;
+          setConnStatus(
+            "Your ID ready. Share it or paste opponent's ID to connect.",
+            "ready",
+          );
+        });
+        peer.on("connection", (c) => {
+          conn = c;
+          setupConn();
+          setConnStatus("Opponent connected! Setting up...", "ok");
+        });
+        peer.on(
+          "error",
+          (e) => setConnStatus("Error: " + e.message, "err"),
+        );
+      }
 
-// ─────────────────────────────────────────────
-//  STATE
-// ─────────────────────────────────────────────
-let peer, conn;
-let myPeerNum = 0; // 1 or 2, assigned during handshake
-let gamePhase = 'connect'; // connect | economy | mapsetup | combat
-let myBuild = null;       // array of 4 units with stats
-let myBuildConfirmed = false;
-let oppBuildConfirmed = false;
-let oppBuild = null;
+      function setupConn() {
+        conn.on("open", () => {
+          setConnStatus("Connected! ✓", "ok");
+          // The connector (P2) sends hello; the host (P1) responds
+          if (!myPeerNum) {
+            // We initiated the connection → we are P2
+            myPeerNum = 2;
+            send({ type: "hello", peerNum: 2 });
+          }
+        });
+        conn.on("data", handleMessage);
+        conn.on("close", () => setConnStatus("Disconnected.", "err"));
+      }
 
-// Map / spawn
-let mapSize = 12;
-let mySpawnCells = [];  // array of {x,y} chosen spawn
-let oppSpawnCells = [];
-let mySpawnConfirmed = false;
-let oppSpawnConfirmed = false;
-let mapSizeConfirmed = false;
-let hostMapSize = 12;
+      function connectToPeer() {
+        const id = document.getElementById("remote-peer-id").value
+          .trim();
+        if (!id) return;
+        conn = peer.connect(id, { reliable: true });
+        setupConn();
+        setConnStatus("Connecting...", "wait");
+      }
 
-// Combat state
-let gameState = null; // full game state
-let myTurn = false;
-let selectedUnitIdx = null;
-let currentAction = null; // 'move'|'reload'|'fire'
-let actionsLeft = 2;
+      function setConnStatus(msg, cls) {
+        const el = document.getElementById("conn-status");
+        el.textContent = msg;
+        el.style.color = cls === "ok"
+          ? "#86efac"
+          : cls === "err"
+          ? "#f87171"
+          : "#fbbf24";
+      }
 
-// Canvas
-let cellSize = 48;
-let mapCanvas, mapCtx, gameCanvas, gameCtx;
+      function copyPeerId() {
+        navigator.clipboard.writeText(
+          document.getElementById("my-peer-id").value,
+        );
+      }
 
-// ─────────────────────────────────────────────
-//  PEER SETUP
-// ─────────────────────────────────────────────
-function initPeer() {
-  peer = new Peer(undefined, {debug:1});
-  peer.on('open', id => {
-    document.getElementById('my-peer-id').value = id;
-    setConnStatus('Your ID ready. Share it or paste opponent\'s ID to connect.', 'ready');
-  });
-  peer.on('connection', c => {
-    conn = c;
-    setupConn();
-    setConnStatus('Opponent connected! Setting up...', 'ok');
-  });
-  peer.on('error', e => setConnStatus('Error: '+e.message, 'err'));
-}
+      // ─────────────────────────────────────────────
+      //  MESSAGING
+      // ─────────────────────────────────────────────
+      function send(obj) {
+        if (conn && conn.open) conn.send(JSON.stringify(obj));
+      }
 
-function setupConn() {
-  conn.on('open', () => {
-    setConnStatus('Connected! ✓', 'ok');
-    // The connector (P2) sends hello; the host (P1) responds
-    if (!myPeerNum) {
-      // We initiated the connection → we are P2
-      myPeerNum = 2;
-      send({type:'hello', peerNum:2});
-    }
-  });
-  conn.on('data', handleMessage);
-  conn.on('close', () => setConnStatus('Disconnected.', 'err'));
-}
+      function handleMessage(raw) {
+        const msg = JSON.parse(raw);
+        switch (msg.type) {
+          case "hello":
+            // Recipient is P1
+            myPeerNum = 1;
+            send({ type: "hello_ack", peerNum: 1 });
+            startEconomyPhase();
+            break;
+          case "hello_ack":
+            startEconomyPhase();
+            break;
+          case "build_ready":
+            oppBuild = msg.build;
+            oppBuildConfirmed = true;
+            log("Opponent confirmed their build.", "sys");
+            checkBothBuildsReady();
+            break;
+          case "map_size":
+            // P1 sets map size, P2 receives
+            hostMapSize = msg.size;
+            mapSize = msg.size;
+            break;
+          case "spawn_ready":
+            oppSpawnCells = msg.spawn;
+            oppSpawnConfirmed = true;
+            log("Opponent placed their units.", "sys");
+            checkBothSpawnsReady();
+            break;
+          case "game_start":
+            // Sent by P1 with full initial game state
+            gameState = msg.state;
+            startCombat();
+            break;
+          case "action":
+            applyAction(msg.action, false);
+            break;
+          case "end_turn":
+            receivedEndTurn();
+            break;
+          case "new_round":
+            handleNewRoundRequest(msg);
+            break;
+        }
+      }
 
-function connectToPeer() {
-  const id = document.getElementById('remote-peer-id').value.trim();
-  if (!id) return;
-  conn = peer.connect(id, {reliable:true});
-  setupConn();
-  setConnStatus('Connecting...', 'wait');
-}
+      // ─────────────────────────────────────────────
+      //  ECONOMY PHASE
+      // ─────────────────────────────────────────────
+      function startEconomyPhase() {
+        gamePhase = "economy";
+        document.getElementById("conn-section").style.display = "none";
+        document.getElementById("economy-section").style.display = "";
+        myBuildConfirmed = false;
+        oppBuildConfirmed = false;
+        renderUnitCards();
+      }
 
-function setConnStatus(msg, cls) {
-  const el = document.getElementById('conn-status');
-  el.textContent = msg;
-  el.style.color = cls==='ok'?'#86efac':cls==='err'?'#f87171':'#fbbf24';
-}
+      function getDefaultBuild() {
+        // Leader:10, Heavy:10, Sniper:10, Dasher:10 - each with Move:2,Health:4,Damage:2,Range:2
+        return UNIT_DEFS.map(() => ({
+          Move: 2,
+          Health: 4,
+          Damage: 2,
+          Range: 2,
+        }));
+      }
 
-function copyPeerId() {
-  navigator.clipboard.writeText(document.getElementById('my-peer-id').value);
-}
+      let buildDraft = null;
 
-// ─────────────────────────────────────────────
-//  MESSAGING
-// ─────────────────────────────────────────────
-function send(obj) {
-  if (conn && conn.open) conn.send(JSON.stringify(obj));
-}
+      function renderUnitCards() {
+        if (!buildDraft) buildDraft = getDefaultBuild();
+        const container = document.getElementById("unit-cards");
+        container.innerHTML = "";
+        UNIT_DEFS.forEach((def, i) => {
+          const stats = buildDraft[i];
+          const total = Object.values(stats).reduce((a, b) => a + b, 0);
+          const card = document.createElement("div");
+          card.className = "unit-card";
+          card.innerHTML =
+            `<h3>${def.emoji} ${def.name} <span style="font-size:.75em;color:#aaa">(${total}pts)</span></h3>`;
+          STATS.forEach((s) => {
+            const row = document.createElement("div");
+            row.className = "stat-row";
+            row.innerHTML = `<label>${s}</label>
+        <input type="number" min="1" max="30" value="${
+              stats[s]
+            }" data-unit="${i}" data-stat="${s}" onchange="onStatChange(this)">`;
+            card.appendChild(row);
+          });
+          container.appendChild(card);
+        });
+        updateBudgetDisplay();
+      }
 
-function handleMessage(raw) {
-  const msg = JSON.parse(raw);
-  switch(msg.type) {
-    case 'hello':
-      // Recipient is P1
-      myPeerNum = 1;
-      send({type:'hello_ack', peerNum:1});
-      startEconomyPhase();
-      break;
-    case 'hello_ack':
-      startEconomyPhase();
-      break;
-    case 'build_ready':
-      oppBuild = msg.build;
-      oppBuildConfirmed = true;
-      log('Opponent confirmed their build.', 'sys');
-      checkBothBuildsReady();
-      break;
-    case 'map_size':
-      // P1 sets map size, P2 receives
-      hostMapSize = msg.size;
-      mapSize = msg.size;
-      break;
-    case 'spawn_ready':
-      oppSpawnCells = msg.spawn;
-      oppSpawnConfirmed = true;
-      log('Opponent placed their units.', 'sys');
-      checkBothSpawnsReady();
-      break;
-    case 'game_start':
-      // Sent by P1 with full initial game state
-      gameState = msg.state;
-      startCombat();
-      break;
-    case 'action':
-      applyAction(msg.action, false);
-      break;
-    case 'end_turn':
-      receivedEndTurn();
-      break;
-    case 'new_round':
-      handleNewRoundRequest(msg);
-      break;
-  }
-}
+      function onStatChange(el) {
+        const i = parseInt(el.dataset.unit);
+        const s = el.dataset.stat;
+        let v = parseInt(el.value) || 1;
+        if (v < 1) v = 1;
+        buildDraft[i][s] = v;
+        updateBudgetDisplay();
+      }
 
-// ─────────────────────────────────────────────
-//  ECONOMY PHASE
-// ─────────────────────────────────────────────
-function startEconomyPhase() {
-  gamePhase = 'economy';
-  document.getElementById('conn-section').style.display = 'none';
-  document.getElementById('economy-section').style.display = '';
-  myBuildConfirmed = false;
-  oppBuildConfirmed = false;
-  renderUnitCards();
-}
+      function updateBudgetDisplay() {
+        let used = 0;
+        buildDraft.forEach((u) => {
+          used += Object.values(u).reduce((a, b) => a + b, 0);
+        });
+        const rem = TOTAL_POINTS - used;
+        const el = document.getElementById("budget-display");
+        el.textContent = `Points Used: ${used} / ${TOTAL_POINTS}  (${
+          rem >= 0 ? rem + "  remaining" : Math.abs(rem) + " OVER"
+        })`;
+        el.className = "budget" + (rem < 0 ? " over" : "");
+      }
 
-function getDefaultBuild() {
-  // Leader:10, Heavy:10, Sniper:10, Dasher:10 - each with Move:2,Health:4,Damage:2,Range:2
-  return UNIT_DEFS.map(() => ({Move:2, Health:4, Damage:2, Range:2}));
-}
+      function getTotalUsed() {
+        return buildDraft.reduce(
+          (s, u) => s + Object.values(u).reduce((a, b) => a + b, 0),
+          0,
+        );
+      }
 
-let buildDraft = null;
+      function validateBuild() {
+        const errs = [];
+        const used = getTotalUsed();
+        if (used !== TOTAL_POINTS) {
+          errs.push(
+            `Must use exactly ${TOTAL_POINTS} points (currently ${used}).`,
+          );
+        }
+        buildDraft.forEach((u, i) => {
+          const uTotal = Object.values(u).reduce((a, b) => a + b, 0);
+          if (uTotal > MAX_PER_UNIT) {
+            errs.push(
+              `${UNIT_DEFS[i].name} has ${uTotal} pts (max 30).`,
+            );
+          }
+          STATS.forEach((s) => {
+            if (u[s] < 1) {
+              errs.push(`${UNIT_DEFS[i].name}.${s} must be ≥1.`);
+            }
+          });
+        });
+        return errs;
+      }
 
-function renderUnitCards() {
-  if (!buildDraft) buildDraft = getDefaultBuild();
-  const container = document.getElementById('unit-cards');
-  container.innerHTML = '';
-  UNIT_DEFS.forEach((def, i) => {
-    const stats = buildDraft[i];
-    const total = Object.values(stats).reduce((a,b)=>a+b,0);
-    const card = document.createElement('div');
-    card.className = 'unit-card';
-    card.innerHTML = `<h3>${def.emoji} ${def.name} <span style="font-size:.75em;color:#aaa">(${total}pts)</span></h3>`;
-    STATS.forEach(s => {
-      const row = document.createElement('div');
-      row.className = 'stat-row';
-      row.innerHTML = `<label>${s}</label>
-        <input type="number" min="1" max="30" value="${stats[s]}" data-unit="${i}" data-stat="${s}" onchange="onStatChange(this)">`;
-      card.appendChild(row);
-    });
-    container.appendChild(card);
-  });
-  updateBudgetDisplay();
-}
+      function confirmEconomy() {
+        const errs = validateBuild();
+        if (errs.length) {
+          document.getElementById("eco-error").textContent = errs[0];
+          return;
+        }
+        document.getElementById("eco-error").textContent = "";
+        myBuild = JSON.parse(JSON.stringify(buildDraft));
+        myBuildConfirmed = true;
+        document.getElementById("confirm-eco-btn").disabled = true;
+        log("Your build confirmed.", "sys");
+        send({ type: "build_ready", build: myBuild });
+        checkBothBuildsReady();
+      }
 
-function onStatChange(el) {
-  const i = parseInt(el.dataset.unit);
-  const s = el.dataset.stat;
-  let v = parseInt(el.value)||1;
-  if(v<1)v=1;
-  buildDraft[i][s] = v;
-  updateBudgetDisplay();
-}
+      function checkBothBuildsReady() {
+        if (myBuildConfirmed && oppBuildConfirmed) startMapSetup();
+      }
 
-function updateBudgetDisplay() {
-  let used = 0;
-  buildDraft.forEach(u => { used += Object.values(u).reduce((a,b)=>a+b,0); });
-  const rem = TOTAL_POINTS - used;
-  const el = document.getElementById('budget-display');
-  el.textContent = `Points Used: ${used} / ${TOTAL_POINTS}  (${rem>=0?rem+'  remaining':Math.abs(rem)+' OVER'})`;
-  el.className = 'budget' + (rem < 0 ? ' over' : '');
-}
+      function randomizeStats() {
+        // distribute 40 points randomly across 4 units, each unit 4-30, each stat ≥1
+        buildDraft = UNIT_DEFS.map(() => ({
+          Move: 1,
+          Health: 1,
+          Damage: 1,
+          Range: 1,
+        }));
+        let remaining = TOTAL_POINTS - 16; // 16 already spent (4 units × 4 stats × 1)
+        // assign up to 26 more points
+        for (let iter = 0; iter < 10000 && remaining > 0; iter++) {
+          const ui = Math.floor(Math.random() * 4);
+          const si = STATS[Math.floor(Math.random() * 4)];
+          const uTotal = Object.values(buildDraft[ui]).reduce(
+            (a, b) => a + b,
+            0,
+          );
+          if (uTotal < MAX_PER_UNIT && remaining > 0) {
+            buildDraft[ui][si]++;
+            remaining--;
+          }
+        }
+        renderUnitCards();
+      }
 
-function getTotalUsed() {
-  return buildDraft.reduce((s,u)=>s+Object.values(u).reduce((a,b)=>a+b,0),0);
-}
+      // ─────────────────────────────────────────────
+      //  MAP SETUP
+      // ─────────────────────────────────────────────
+      function startMapSetup() {
+        gamePhase = "mapsetup";
+        document.getElementById("economy-section").style.display =
+          "none";
+        document.getElementById("map-section").style.display = "";
+        mapCanvas = document.getElementById("map-canvas");
+        mapCtx = mapCanvas.getContext("2d");
+        mySpawnCells = [];
+        mySpawnConfirmed = false;
+        oppSpawnConfirmed = false;
 
-function validateBuild() {
-  const errs = [];
-  const used = getTotalUsed();
-  if (used !== TOTAL_POINTS) errs.push(`Must use exactly ${TOTAL_POINTS} points (currently ${used}).`);
-  buildDraft.forEach((u,i) => {
-    const uTotal = Object.values(u).reduce((a,b)=>a+b,0);
-    if (uTotal > MAX_PER_UNIT) errs.push(`${UNIT_DEFS[i].name} has ${uTotal} pts (max 30).`);
-    STATS.forEach(s => { if(u[s]<1) errs.push(`${UNIT_DEFS[i].name}.${s} must be ≥1.`); });
-  });
-  return errs;
-}
+        if (myPeerNum === 1) {
+          document.getElementById("map-role-label").textContent =
+            "(You are HOST — choose map size)";
+          document.getElementById("map-size-select").disabled = false;
+          onMapSizeChange();
+        } else {
+          document.getElementById("map-role-label").textContent =
+            "(Waiting for host to set map size...)";
+          document.getElementById("map-size-select").disabled = true;
+          mapSize = hostMapSize || 12;
+          drawMapSetup();
+        }
 
-function confirmEconomy() {
-  const errs = validateBuild();
-  if (errs.length) { document.getElementById('eco-error').textContent = errs[0]; return; }
-  document.getElementById('eco-error').textContent = '';
-  myBuild = JSON.parse(JSON.stringify(buildDraft));
-  myBuildConfirmed = true;
-  document.getElementById('confirm-eco-btn').disabled = true;
-  log('Your build confirmed.', 'sys');
-  send({type:'build_ready', build:myBuild});
-  checkBothBuildsReady();
-}
+        document.getElementById("spawn-hint").textContent =
+          "Click cells to place your 4 units (in your spawn zone).";
+        mapCanvas.addEventListener("click", onMapCanvasClick);
+      }
 
-function checkBothBuildsReady() {
-  if (myBuildConfirmed && oppBuildConfirmed) startMapSetup();
-}
+      function onMapSizeChange() {
+        if (myPeerNum === 1) {
+          mapSize = parseInt(
+            document.getElementById("map-size-select").value,
+          );
+          send({ type: "map_size", size: mapSize });
+        }
+        drawMapSetup();
+      }
 
-function randomizeStats() {
-  // distribute 40 points randomly across 4 units, each unit 4-30, each stat ≥1
-  buildDraft = UNIT_DEFS.map(() => ({Move:1,Health:1,Damage:1,Range:1}));
-  let remaining = TOTAL_POINTS - 16; // 16 already spent (4 units × 4 stats × 1)
-  // assign up to 26 more points
-  for (let iter=0; iter<10000 && remaining>0; iter++) {
-    const ui = Math.floor(Math.random()*4);
-    const si = STATS[Math.floor(Math.random()*4)];
-    const uTotal = Object.values(buildDraft[ui]).reduce((a,b)=>a+b,0);
-    if (uTotal < MAX_PER_UNIT && remaining > 0) {
-      buildDraft[ui][si]++;
-      remaining--;
-    }
-  }
-  renderUnitCards();
-}
+      function getCellSizeForMap(size) {
+        return Math.min(48, Math.floor(520 / size));
+      }
 
-// ─────────────────────────────────────────────
-//  MAP SETUP
-// ─────────────────────────────────────────────
-function startMapSetup() {
-  gamePhase = 'mapsetup';
-  document.getElementById('economy-section').style.display = 'none';
-  document.getElementById('map-section').style.display = '';
-  mapCanvas = document.getElementById('map-canvas');
-  mapCtx = mapCanvas.getContext('2d');
-  mySpawnCells = [];
-  mySpawnConfirmed = false;
-  oppSpawnConfirmed = false;
+      function drawMapSetup() {
+        const cs = getCellSizeForMap(mapSize);
+        mapCanvas.width = mapSize * cs;
+        mapCanvas.height = mapSize * cs;
 
-  if (myPeerNum === 1) {
-    document.getElementById('map-role-label').textContent = '(You are HOST — choose map size)';
-    document.getElementById('map-size-select').disabled = false;
-    onMapSizeChange();
-  } else {
-    document.getElementById('map-role-label').textContent = '(Waiting for host to set map size...)';
-    document.getElementById('map-size-select').disabled = true;
-    mapSize = hostMapSize || 12;
-    drawMapSetup();
-  }
+        // Draw grid
+        for (let y = 0; y < mapSize; y++) {
+          for (let x = 0; x < mapSize; x++) {
+            const inZone = isInSpawnZone(x, y);
+            mapCtx.fillStyle = inZone
+              ? "rgba(127,127,213,.2)"
+              : "#0a0a1a";
+            mapCtx.fillRect(x * cs, y * cs, cs, cs);
+            mapCtx.strokeStyle = "#1a1a3e";
+            mapCtx.strokeRect(x * cs, y * cs, cs, cs);
+          }
+        }
+        // Highlight chosen cells
+        mySpawnCells.forEach((c, i) => {
+          mapCtx.fillStyle = "#7f7fd5";
+          mapCtx.fillRect(c.x * cs + 2, c.y * cs + 2, cs - 4, cs - 4);
+          mapCtx.fillStyle = "#fff";
+          mapCtx.font = `${cs * .5}px serif`;
+          mapCtx.textAlign = "center";
+          mapCtx.textBaseline = "middle";
+          mapCtx.fillText(
+            UNIT_DEFS[i].emoji,
+            c.x * cs + cs / 2,
+            c.y * cs + cs / 2,
+          );
+        });
+        // Label
+        mapCtx.fillStyle = "#7f7fd5";
+        mapCtx.font = "11px Courier New";
+        mapCtx.textAlign = "left";
+        mapCtx.textBaseline = "top";
+        mapCtx.fillText("← Your spawn zone", 3, 3);
+      }
 
-  document.getElementById('spawn-hint').textContent = 'Click cells to place your 4 units (in your spawn zone).';
-  mapCanvas.addEventListener('click', onMapCanvasClick);
-}
+      function isInSpawnZone(x, y) {
+        const half = Math.floor(mapSize / 2);
+        return myPeerNum === 1 ? x < half : x >= mapSize - half;
+      }
 
-function onMapSizeChange() {
-  if (myPeerNum === 1) {
-    mapSize = parseInt(document.getElementById('map-size-select').value);
-    send({type:'map_size', size:mapSize});
-  }
-  drawMapSetup();
-}
+      function onMapCanvasClick(e) {
+        if (mySpawnConfirmed) return;
+        const cs = getCellSizeForMap(mapSize);
+        const rect = mapCanvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / cs);
+        const y = Math.floor((e.clientY - rect.top) / cs);
+        if (!isInSpawnZone(x, y)) return;
+        // Check not already placed
+        const existing = mySpawnCells.findIndex((c) =>
+          c.x === x && c.y === y
+        );
+        if (existing >= 0) mySpawnCells.splice(existing, 1);
+        else if (mySpawnCells.length < 4) mySpawnCells.push({ x, y });
+        document.getElementById("confirm-spawn-btn").disabled =
+          mySpawnCells.length !== 4;
+        document.getElementById("spawn-hint").textContent =
+          `Placed ${mySpawnCells.length}/4 units. Click to toggle.`;
+        drawMapSetup();
+      }
 
-function getCellSizeForMap(size) {
-  return Math.min(48, Math.floor(520/size));
-}
+      function confirmSpawn() {
+        mySpawnConfirmed = true;
+        send({ type: "spawn_ready", spawn: mySpawnCells });
+        document.getElementById("confirm-spawn-btn").disabled = true;
+        document.getElementById("spawn-hint").textContent =
+          "Waiting for opponent to place units...";
+        log("Your spawn confirmed.", "sys");
+        checkBothSpawnsReady();
+      }
 
-function drawMapSetup() {
-  const cs = getCellSizeForMap(mapSize);
-  mapCanvas.width = mapSize * cs;
-  mapCanvas.height = mapSize * cs;
+      function checkBothSpawnsReady() {
+        if (mySpawnConfirmed && oppSpawnConfirmed) {
+          if (myPeerNum === 1) buildAndSendGameState();
+          // P2 waits for game_start
+        }
+      }
 
-  // Draw grid
-  for (let y=0;y<mapSize;y++) {
-    for (let x=0;x<mapSize;x++) {
-      const inZone = isInSpawnZone(x,y);
-      mapCtx.fillStyle = inZone ? 'rgba(127,127,213,.2)' : '#0a0a1a';
-      mapCtx.fillRect(x*cs,y*cs,cs,cs);
-      mapCtx.strokeStyle = '#1a1a3e';
-      mapCtx.strokeRect(x*cs,y*cs,cs,cs);
-    }
-  }
-  // Highlight chosen cells
-  mySpawnCells.forEach((c,i) => {
-    mapCtx.fillStyle = '#7f7fd5';
-    mapCtx.fillRect(c.x*cs+2,c.y*cs+2,cs-4,cs-4);
-    mapCtx.fillStyle = '#fff';
-    mapCtx.font = `${cs*.5}px serif`;
-    mapCtx.textAlign='center';
-    mapCtx.textBaseline='middle';
-    mapCtx.fillText(UNIT_DEFS[i].emoji, c.x*cs+cs/2, c.y*cs+cs/2);
-  });
-  // Label
-  mapCtx.fillStyle = '#7f7fd5';
-  mapCtx.font = '11px Courier New';
-  mapCtx.textAlign='left';
-  mapCtx.textBaseline='top';
-  mapCtx.fillText('← Your spawn zone', 3, 3);
-}
+      // ─────────────────────────────────────────────
+      //  GAME STATE CONSTRUCTION (P1 only)
+      // ─────────────────────────────────────────────
+      function buildAndSendGameState() {
+        // Build unit list for both players
+        const p1Units = buildUnitsFromSpawn(
+          1,
+          myPeerNum === 1 ? mySpawnCells : oppSpawnCells,
+          myPeerNum === 1 ? myBuild : oppBuild,
+        );
+        const p2Units = buildUnitsFromSpawn(
+          2,
+          myPeerNum === 2 ? mySpawnCells : oppSpawnCells,
+          myPeerNum === 2 ? myBuild : oppBuild,
+        );
+        gameState = {
+          mapSize,
+          turn: 1, // player number whose turn it is
+          units: [...p1Units, ...p2Units],
+          round: 1,
+        };
+        send({ type: "game_start", state: gameState });
+        startCombat();
+      }
 
-function isInSpawnZone(x, y) {
-  const half = Math.floor(mapSize/2);
-  return myPeerNum===1 ? x < half : x >= mapSize - half;
-}
+      function buildUnitsFromSpawn(playerNum, spawnCells, build) {
+        return UNIT_DEFS.map((def, i) => ({
+          id: `p${playerNum}_${i}`,
+          player: playerNum,
+          name: def.name,
+          emoji: def.emoji,
+          color: def.color,
+          ...build[i],
+          hp: build[i].Health,
+          maxHp: build[i].Health,
+          x: spawnCells[i].x,
+          y: spawnCells[i].y,
+          loaded: true,
+          acted: false,
+        }));
+      }
 
-function onMapCanvasClick(e) {
-  if (mySpawnConfirmed) return;
-  const cs = getCellSizeForMap(mapSize);
-  const rect = mapCanvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX-rect.left)/cs);
-  const y = Math.floor((e.clientY-rect.top)/cs);
-  if (!isInSpawnZone(x,y)) return;
-  // Check not already placed
-  const existing = mySpawnCells.findIndex(c=>c.x===x&&c.y===y);
-  if (existing>=0) { mySpawnCells.splice(existing,1); }
-  else if (mySpawnCells.length < 4) { mySpawnCells.push({x,y}); }
-  document.getElementById('confirm-spawn-btn').disabled = mySpawnCells.length !== 4;
-  document.getElementById('spawn-hint').textContent = `Placed ${mySpawnCells.length}/4 units. Click to toggle.`;
-  drawMapSetup();
-}
+      // ─────────────────────────────────────────────
+      //  COMBAT
+      // ─────────────────────────────────────────────
+      function startCombat() {
+        gamePhase = "combat";
+        document.getElementById("map-section").style.display = "none";
+        document.getElementById("hud").style.display = "flex";
+        document.getElementById("game-canvas").style.display = "";
+        document.getElementById("log").style.display = "";
+        mapCanvas.removeEventListener("click", onMapCanvasClick);
 
-function confirmSpawn() {
-  mySpawnConfirmed = true;
-  send({type:'spawn_ready', spawn:mySpawnCells});
-  document.getElementById('confirm-spawn-btn').disabled = true;
-  document.getElementById('spawn-hint').textContent = 'Waiting for opponent to place units...';
-  log('Your spawn confirmed.', 'sys');
-  checkBothSpawnsReady();
-}
+        gameCanvas = document.getElementById("game-canvas");
+        gameCtx = gameCanvas.getContext("2d");
+        cellSize = getCellSizeForMap(gameState.mapSize);
+        gameCanvas.width = gameState.mapSize * cellSize;
+        gameCanvas.height = gameState.mapSize * cellSize;
 
-function checkBothSpawnsReady() {
-  if (mySpawnConfirmed && oppSpawnConfirmed) {
-    if (myPeerNum === 1) buildAndSendGameState();
-    // P2 waits for game_start
-  }
-}
+        document.getElementById("my-pnum").textContent = myPeerNum;
+        gameCanvas.addEventListener("click", onGameCanvasClick);
 
-// ─────────────────────────────────────────────
-//  GAME STATE CONSTRUCTION (P1 only)
-// ─────────────────────────────────────────────
-function buildAndSendGameState() {
-  // Build unit list for both players
-  const p1Units = buildUnitsFromSpawn(1, myPeerNum===1?mySpawnCells:oppSpawnCells, myPeerNum===1?myBuild:oppBuild);
-  const p2Units = buildUnitsFromSpawn(2, myPeerNum===2?mySpawnCells:oppSpawnCells, myPeerNum===2?myBuild:oppBuild);
-  gameState = {
-    mapSize,
-    turn: 1, // player number whose turn it is
-    units: [...p1Units, ...p2Units],
-    round: 1,
-  };
-  send({type:'game_start', state:gameState});
-  startCombat();
-}
+        selectedUnitIdx = null;
+        currentAction = null;
+        actionsLeft = 2;
 
-function buildUnitsFromSpawn(playerNum, spawnCells, build) {
-  return UNIT_DEFS.map((def, i) => ({
-    id: `p${playerNum}_${i}`,
-    player: playerNum,
-    name: def.name,
-    emoji: def.emoji,
-    color: def.color,
-    ...build[i],
-    hp: build[i].Health,
-    maxHp: build[i].Health,
-    x: spawnCells[i].x,
-    y: spawnCells[i].y,
-    loaded: true,
-    acted: false,
-  }));
-}
+        updateTurn();
+        renderGame();
+      }
 
-// ─────────────────────────────────────────────
-//  COMBAT
-// ─────────────────────────────────────────────
-function startCombat() {
-  gamePhase = 'combat';
-  document.getElementById('map-section').style.display = 'none';
-  document.getElementById('hud').style.display = 'flex';
-  document.getElementById('game-canvas').style.display = '';
-  document.getElementById('log').style.display = '';
-  mapCanvas.removeEventListener('click', onMapCanvasClick);
+      function myUnits() {
+        return gameState.units.filter((u) => u.player === myPeerNum);
+      }
+      function oppUnits() {
+        return gameState.units.filter((u) => u.player !== myPeerNum);
+      }
+      function isMyTurn() {
+        return gameState.turn === myPeerNum;
+      }
 
-  gameCanvas = document.getElementById('game-canvas');
-  gameCtx = gameCanvas.getContext('2d');
-  cellSize = getCellSizeForMap(gameState.mapSize);
-  gameCanvas.width = gameState.mapSize * cellSize;
-  gameCanvas.height = gameState.mapSize * cellSize;
+      function updateTurn() {
+        myTurn = isMyTurn();
+        document.getElementById("turn-label").textContent = myTurn
+          ? "⚡ YOUR TURN"
+          : "⏳ OPPONENT'S TURN";
+        document.getElementById("turn-label").style.color = myTurn
+          ? "#fbbf24"
+          : "#aaa";
+        document.getElementById("btn-endturn").disabled = !myTurn;
+        document.getElementById("btn-move").disabled = !myTurn;
+        document.getElementById("btn-reload").disabled = !myTurn;
+        document.getElementById("btn-fire").disabled = !myTurn;
+        document.getElementById("actions-remaining").textContent =
+          `Actions: ${actionsLeft}/2`;
+        renderUnitLists();
+      }
 
-  document.getElementById('my-pnum').textContent = myPeerNum;
-  gameCanvas.addEventListener('click', onGameCanvasClick);
+      function renderUnitLists() {
+        renderUnitList("my-units", myUnits(), true);
+        renderUnitList("opp-units", oppUnits(), false);
+      }
 
-  selectedUnitIdx = null;
-  currentAction = null;
-  actionsLeft = 2;
-
-  updateTurn();
-  renderGame();
-}
-
-function myUnits() { return gameState.units.filter(u=>u.player===myPeerNum); }
-function oppUnits() { return gameState.units.filter(u=>u.player!==myPeerNum); }
-function isMyTurn() { return gameState.turn === myPeerNum; }
-
-function updateTurn() {
-  myTurn = isMyTurn();
-  document.getElementById('turn-label').textContent = myTurn ? '⚡ YOUR TURN' : '⏳ OPPONENT\'S TURN';
-  document.getElementById('turn-label').style.color = myTurn ? '#fbbf24':'#aaa';
-  document.getElementById('btn-endturn').disabled = !myTurn;
-  document.getElementById('btn-move').disabled = !myTurn;
-  document.getElementById('btn-reload').disabled = !myTurn;
-  document.getElementById('btn-fire').disabled = !myTurn;
-  document.getElementById('actions-remaining').textContent = `Actions: ${actionsLeft}/2`;
-  renderUnitLists();
-}
-
-function renderUnitLists() {
-  renderUnitList('my-units', myUnits(), true);
-  renderUnitList('opp-units', oppUnits(), false);
-}
-
-function renderUnitList(containerId, units, selectable) {
-  const el = document.getElementById(containerId);
-  el.innerHTML = '';
-  units.forEach((u, localIdx) => {
-    const div = document.createElement('div');
-    div.className = 'unit-item' + (u.hp<=0?' dead':'') + (selectable&&selectedUnitIdx===gameState.units.indexOf(u)?' selected':'');
-    const hpPct = Math.max(0, u.hp/u.maxHp*100);
-    const hpColor = hpPct>50?'#86efac':hpPct>25?'#fbbf24':'#f87171';
-    div.innerHTML = `<div class="uname">${u.emoji} ${u.name}</div>
-      <div class="ustats">HP:${Math.max(0,u.hp)}/${u.maxHp} | Mv:${u.Move} | Dmg:${u.Damage} | Rng:${u.Range} | ${u.loaded?'🔵Loaded':'🔴Empty'}</div>
+      function renderUnitList(containerId, units, selectable) {
+        const el = document.getElementById(containerId);
+        el.innerHTML = "";
+        units.forEach((u, localIdx) => {
+          const div = document.createElement("div");
+          div.className = "unit-item" + (u.hp <= 0 ? " dead" : "") +
+            (selectable &&
+                selectedUnitIdx === gameState.units.indexOf(u)
+              ? " selected"
+              : "");
+          const hpPct = Math.max(0, u.hp / u.maxHp * 100);
+          const hpColor = hpPct > 50
+            ? "#86efac"
+            : hpPct > 25
+            ? "#fbbf24"
+            : "#f87171";
+          div.innerHTML = `<div class="uname">${u.emoji} ${u.name}</div>
+      <div class="ustats">HP:${
+            Math.max(0, u.hp)
+          }/${u.maxHp} | Mv:${u.Move} | Dmg:${u.Damage} | Rng:${u.Range} | ${
+            u.loaded ? "🔵Loaded" : "🔴Empty"
+          }</div>
       <div class="hp-bar"><div class="hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>`;
-    if (selectable && u.hp > 0) {
-      div.onclick = () => selectUnit(gameState.units.indexOf(u));
-    }
-    el.appendChild(div);
-  });
-}
-
-function selectUnit(idx) {
-  if (!myTurn) return;
-  const u = gameState.units[idx];
-  if (u.player !== myPeerNum || u.hp <= 0) return;
-  selectedUnitIdx = idx;
-  currentAction = null;
-  clearActionButtons();
-  renderUnitLists();
-  renderGame();
-  updateRangeInfo();
-}
-
-function setAction(a) {
-  if (!myTurn || selectedUnitIdx === null) return;
-  currentAction = a;
-  clearActionButtons();
-  document.getElementById('btn-'+a).classList.add('active');
-  if (a==='reload') {
-    // Instantly apply reload
-    const u = gameState.units[selectedUnitIdx];
-    if (u.loaded) { log(`${u.name} is already loaded!`,'sys'); currentAction=null; return; }
-    executeAction({type:'reload', unitId:u.id});
-  }
-}
-
-function clearActionButtons() {
-  ['move','reload','fire'].forEach(b => document.getElementById('btn-'+b)?.classList.remove('active'));
-}
-
-function updateRangeInfo() {
-  if (selectedUnitIdx===null) { document.getElementById('range-info').textContent=''; return; }
-  const u = gameState.units[selectedUnitIdx];
-  document.getElementById('range-info').textContent = `Move: ${u.Move} | Range: ${u.Range}`;
-}
-
-function onGameCanvasClick(e) {
-  if (!myTurn || selectedUnitIdx===null || !currentAction) return;
-  const rect = gameCanvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX-rect.left)/cellSize);
-  const y = Math.floor((e.clientY-rect.top)/cellSize);
-  const u = gameState.units[selectedUnitIdx];
-
-  if (currentAction==='move') {
-    const dist = Math.abs(x-u.x)+Math.abs(y-u.y);
-    if (dist===0||dist>u.Move) { log(`Out of move range (max ${u.Move}).`,'sys'); return; }
-    // Check not occupied
-    if (gameState.units.some(o=>o!==u&&o.hp>0&&o.x===x&&o.y===y)) { log('Cell occupied!','sys'); return; }
-    executeAction({type:'move', unitId:u.id, x, y});
-  } else if (currentAction==='fire') {
-    const target = gameState.units.find(t=>t.x===x&&t.y===y&&t.hp>0);
-    if (!target) { log('No target there.','sys'); return; }
-    const dist = Math.abs(x-u.x)+Math.abs(y-u.y);
-    if (dist>u.Range) { log(`Target out of range (max ${u.Range}).`,'sys'); return; }
-    if (!u.loaded) { log('Weapon not loaded! Use Reload first.','sys'); return; }
-    // Leader heals own, others attack enemy
-    if (u.name==='Leader') {
-      if (target.player!==myPeerNum) { log('Leader can only heal allies!','sys'); return; }
-      if (target.hp<=0) { log('Cannot heal dead units!','sys'); return; }
-    } else {
-      if (target.player===myPeerNum) { log('Cannot attack own units!','sys'); return; }
-    }
-    executeAction({type:'fire', unitId:u.id, targetId:target.id});
-  }
-}
-
-function executeAction(action, sendToOpp=true) {
-  if (actionsLeft <= 0) { log('No actions remaining this turn!','sys'); return; }
-  applyAction(action, true);
-  if (sendToOpp) send({type:'action', action});
-  actionsLeft--;
-  currentAction = null;
-  clearActionButtons();
-  document.getElementById('actions-remaining').textContent = `Actions: ${actionsLeft}/2`;
-  checkWin();
-  renderGame();
-  renderUnitLists();
-}
-
-function applyAction(action, isMe) {
-  const u = gameState.units.find(u=>u.id===action.unitId);
-  if (!u) return;
-  switch(action.type) {
-    case 'move':
-      u.x = action.x; u.y = action.y;
-      log(`${u.name} moved to (${u.x},${u.y}).`, isMe?'p1':'p2');
-      break;
-    case 'reload':
-      u.loaded = true;
-      log(`${u.name} reloaded.`, isMe?'p1':'p2');
-      actionsLeft--;
-      document.getElementById('actions-remaining').textContent = `Actions: ${actionsLeft}/2`;
-      checkWin();
-      renderGame();
-      renderUnitLists();
-      break;
-    case 'fire': {
-      const target = gameState.units.find(t=>t.id===action.targetId);
-      if (!target) break;
-      u.loaded = false;
-      if (u.name==='Leader') {
-        target.hp = Math.min(target.maxHp, target.hp + u.Damage);
-        log(`${u.name} healed ${target.name} for ${u.Damage}HP.`, isMe?'p1':'p2');
-      } else {
-        target.hp -= u.Damage;
-        log(`${u.name} hit ${target.name} for ${u.Damage} damage. (HP:${Math.max(0,target.hp)})`, isMe?'p1':'p2');
+          if (selectable && u.hp > 0) {
+            div.onclick = () => selectUnit(gameState.units.indexOf(u));
+          }
+          el.appendChild(div);
+        });
       }
-      break;
-    }
-  }
-}
 
-function endTurn() {
-  if (!myTurn) return;
-  // Reset loaded state restriction — units keep loaded state, just reset acted
-  actionsLeft = 2;
-  selectedUnitIdx = null;
-  currentAction = null;
-  clearActionButtons();
-  // Unload fired units is handled per-fire; newly entering turn — P2 unlocks, etc.
-  gameState.turn = gameState.turn === 1 ? 2 : 1;
-  send({type:'end_turn'});
-  updateTurn();
-  renderGame();
-  log('--- Turn ended ---', 'sys');
-}
+      function selectUnit(idx) {
+        if (!myTurn) return;
+        const u = gameState.units[idx];
+        if (u.player !== myPeerNum || u.hp <= 0) return;
+        selectedUnitIdx = idx;
+        currentAction = null;
+        clearActionButtons();
+        renderUnitLists();
+        renderGame();
+        updateRangeInfo();
+      }
 
-function receivedEndTurn() {
-  gameState.turn = gameState.turn === 1 ? 2 : 1;
-  actionsLeft = 2;
-  selectedUnitIdx = null;
-  currentAction = null;
-  clearActionButtons();
-  updateTurn();
-  renderGame();
-  log('--- Opponent ended turn ---', 'sys');
-}
+      function setAction(a) {
+        if (!myTurn || selectedUnitIdx === null) return;
+        currentAction = a;
+        clearActionButtons();
+        document.getElementById("btn-" + a).classList.add("active");
+        if (a === "reload") {
+          // Instantly apply reload
+          const u = gameState.units[selectedUnitIdx];
+          if (u.loaded) {
+            log(`${u.name} is already loaded!`, "sys");
+            currentAction = null;
+            return;
+          }
+          executeAction({ type: "reload", unitId: u.id });
+        }
+      }
 
-function checkWin() {
-  const p1Leader = gameState.units.find(u=>u.player===1&&u.name==='Leader');
-  const p2Leader = gameState.units.find(u=>u.player===2&&u.name==='Leader');
-  if (p1Leader && p1Leader.hp <= 0) { showWin(2); return; }
-  if (p2Leader && p2Leader.hp <= 0) { showWin(1); return; }
-}
+      function clearActionButtons() {
+        ["move", "reload", "fire"].forEach((b) =>
+          document.getElementById("btn-" + b)?.classList.remove(
+            "active",
+          )
+        );
+      }
 
-function showWin(winnerNum) {
-  const isMe = winnerNum === myPeerNum;
-  document.getElementById('overlay-title').textContent = isMe ? '🏆 VICTORY!' : '💀 DEFEAT';
-  document.getElementById('overlay-msg').textContent = isMe
-    ? 'You eliminated the enemy Leader!'
-    : 'Your Leader was eliminated!';
-  document.getElementById('overlay').style.display = 'flex';
-}
+      function updateRangeInfo() {
+        if (selectedUnitIdx === null) {
+          document.getElementById("range-info").textContent = "";
+          return;
+        }
+        const u = gameState.units[selectedUnitIdx];
+        document.getElementById("range-info").textContent =
+          `Move: ${u.Move} | Range: ${u.Range}`;
+      }
 
-function newRound(rebuild) {
-  document.getElementById('overlay').style.display = 'none';
-  send({type:'new_round', rebuild});
-  if (rebuild) {
-    buildDraft = null;
-    startEconomyPhase();
-  } else {
-    // Keep builds, go to map setup
-    mySpawnCells = [];
-    oppSpawnCells = [];
-    mySpawnConfirmed = false;
-    oppSpawnConfirmed = false;
-    myBuildConfirmed = true;
-    oppBuildConfirmed = true; // keep opp build
-    document.getElementById('hud').style.display = 'none';
-    document.getElementById('game-canvas').style.display = 'none';
-    document.getElementById('log').style.display = 'none';
-    startMapSetup();
-  }
-}
+      function onGameCanvasClick(e) {
+        if (!myTurn || selectedUnitIdx === null || !currentAction) {
+          return;
+        }
+        const rect = gameCanvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / cellSize);
+        const y = Math.floor((e.clientY - rect.top) / cellSize);
+        const u = gameState.units[selectedUnitIdx];
 
-function handleNewRoundRequest(msg) {
-  // Show overlay too on receiving side
-  showWin(myPeerNum===1?2:1); // flip - the sender won
-  // Let them also pick
-}
+        if (currentAction === "move") {
+          const dist = Math.abs(x - u.x) + Math.abs(y - u.y);
+          if (dist === 0 || dist > u.Move) {
+            log(`Out of move range (max ${u.Move}).`, "sys");
+            return;
+          }
+          // Check not occupied
+          if (
+            gameState.units.some((o) =>
+              o !== u && o.hp > 0 && o.x === x && o.y === y
+            )
+          ) {
+            log("Cell occupied!", "sys");
+            return;
+          }
+          executeAction({ type: "move", unitId: u.id, x, y });
+        } else if (currentAction === "fire") {
+          const target = gameState.units.find((t) =>
+            t.x === x && t.y === y && t.hp > 0
+          );
+          if (!target) {
+            log("No target there.", "sys");
+            return;
+          }
+          const dist = Math.abs(x - u.x) + Math.abs(y - u.y);
+          if (dist > u.Range) {
+            log(`Target out of range (max ${u.Range}).`, "sys");
+            return;
+          }
+          if (!u.loaded) {
+            log("Weapon not loaded! Use Reload first.", "sys");
+            return;
+          }
+          // Leader heals own, others attack enemy
+          if (u.name === "Leader") {
+            if (target.player !== myPeerNum) {
+              log("Leader can only heal allies!", "sys");
+              return;
+            }
+            if (target.hp <= 0) {
+              log("Cannot heal dead units!", "sys");
+              return;
+            }
+          } else {
+            if (target.player === myPeerNum) {
+              log("Cannot attack own units!", "sys");
+              return;
+            }
+          }
+          executeAction({
+            type: "fire",
+            unitId: u.id,
+            targetId: target.id,
+          });
+        }
+      }
 
-// ─────────────────────────────────────────────
-//  RENDERING
-// ─────────────────────────────────────────────
-function renderGame() {
-  if (!gameState) return;
-  const cs = cellSize;
-  const sz = gameState.mapSize;
-  gameCtx.clearRect(0,0,gameCanvas.width,gameCanvas.height);
+      function executeAction(action, sendToOpp = true) {
+        if (actionsLeft <= 0) {
+          log("No actions remaining this turn!", "sys");
+          return;
+        }
+        applyAction(action, true);
+        if (sendToOpp) send({ type: "action", action });
+        actionsLeft--;
+        currentAction = null;
+        clearActionButtons();
+        document.getElementById("actions-remaining").textContent =
+          `Actions: ${actionsLeft}/2`;
+        checkWin();
+        renderGame();
+        renderUnitLists();
+      }
 
-  // Grid
-  for (let y=0;y<sz;y++) {
-    for (let x=0;x<sz;x++) {
-      gameCtx.fillStyle = (x+y)%2===0?'#0a0a1a':'#0f0f22';
-      gameCtx.fillRect(x*cs,y*cs,cs,cs);
-      gameCtx.strokeStyle='#1a1a3e';
-      gameCtx.strokeRect(x*cs,y*cs,cs,cs);
-    }
-  }
-
-  // Highlight move range
-  if (selectedUnitIdx!==null && currentAction==='move') {
-    const u = gameState.units[selectedUnitIdx];
-    for (let dy=-u.Move;dy<=u.Move;dy++) {
-      for (let dx=-u.Move;dx<=u.Move;dx++) {
-        if (Math.abs(dx)+Math.abs(dy)<=u.Move && Math.abs(dx)+Math.abs(dy)>0) {
-          const nx=u.x+dx, ny=u.y+dy;
-          if(nx>=0&&nx<sz&&ny>=0&&ny<sz) {
-            gameCtx.fillStyle='rgba(127,127,213,.25)';
-            gameCtx.fillRect(nx*cs,ny*cs,cs,cs);
+      function applyAction(action, isMe) {
+        const u = gameState.units.find((u) => u.id === action.unitId);
+        if (!u) return;
+        switch (action.type) {
+          case "move":
+            u.x = action.x;
+            u.y = action.y;
+            log(
+              `${u.name} moved to (${u.x},${u.y}).`,
+              isMe ? "p1" : "p2",
+            );
+            break;
+          case "reload":
+            u.loaded = true;
+            log(`${u.name} reloaded.`, isMe ? "p1" : "p2");
+            actionsLeft--;
+            document.getElementById("actions-remaining").textContent =
+              `Actions: ${actionsLeft}/2`;
+            checkWin();
+            renderGame();
+            renderUnitLists();
+            break;
+          case "fire": {
+            const target = gameState.units.find((t) =>
+              t.id === action.targetId
+            );
+            if (!target) break;
+            u.loaded = false;
+            if (u.name === "Leader") {
+              target.hp = Math.min(target.maxHp, target.hp + u.Damage);
+              log(
+                `${u.name} healed ${target.name} for ${u.Damage}HP.`,
+                isMe ? "p1" : "p2",
+              );
+            } else {
+              target.hp -= u.Damage;
+              log(
+                `${u.name} hit ${target.name} for ${u.Damage} damage. (HP:${
+                  Math.max(0, target.hp)
+                })`,
+                isMe ? "p1" : "p2",
+              );
+            }
+            break;
           }
         }
       }
-    }
-  }
-  // Highlight fire range
-  if (selectedUnitIdx!==null && currentAction==='fire') {
-    const u = gameState.units[selectedUnitIdx];
-    for (let dy=-u.Range;dy<=u.Range;dy++) {
-      for (let dx=-u.Range;dx<=u.Range;dx++) {
-        if (Math.abs(dx)+Math.abs(dy)<=u.Range) {
-          const nx=u.x+dx, ny=u.y+dy;
-          if(nx>=0&&nx<sz&&ny>=0&&ny<sz) {
-            gameCtx.fillStyle='rgba(249,115,22,.2)';
-            gameCtx.fillRect(nx*cs,ny*cs,cs,cs);
-          }
+
+      function endTurn() {
+        if (!myTurn) return;
+        // Reset loaded state restriction — units keep loaded state, just reset acted
+        actionsLeft = 2;
+        selectedUnitIdx = null;
+        currentAction = null;
+        clearActionButtons();
+        // Unload fired units is handled per-fire; newly entering turn — P2 unlocks, etc.
+        gameState.turn = gameState.turn === 1 ? 2 : 1;
+        send({ type: "end_turn" });
+        updateTurn();
+        renderGame();
+        log("--- Turn ended ---", "sys");
+      }
+
+      function receivedEndTurn() {
+        gameState.turn = gameState.turn === 1 ? 2 : 1;
+        actionsLeft = 2;
+        selectedUnitIdx = null;
+        currentAction = null;
+        clearActionButtons();
+        updateTurn();
+        renderGame();
+        log("--- Opponent ended turn ---", "sys");
+      }
+
+      function checkWin() {
+        const p1Leader = gameState.units.find((u) =>
+          u.player === 1 && u.name === "Leader"
+        );
+        const p2Leader = gameState.units.find((u) =>
+          u.player === 2 && u.name === "Leader"
+        );
+        if (p1Leader && p1Leader.hp <= 0) {
+          showWin(2);
+          return;
+        }
+        if (p2Leader && p2Leader.hp <= 0) {
+          showWin(1);
+          return;
         }
       }
-    }
-  }
 
-  // Units
-  gameState.units.forEach(u => {
-    const x=u.x*cs, y=u.y*cs;
-    if(u.hp<=0) {
-      gameCtx.globalAlpha=0.25;
-    }
-    // Background circle
-    gameCtx.beginPath();
-    gameCtx.arc(x+cs/2,y+cs/2,cs*.38,0,Math.PI*2);
-    gameCtx.fillStyle = u.player===myPeerNum ? '#1a2a5e' : '#3a1a1a';
-    gameCtx.fill();
-    gameCtx.strokeStyle = u.color;
-    gameCtx.lineWidth = selectedUnitIdx===gameState.units.indexOf(u) ? 3 : 1.5;
-    gameCtx.stroke();
-    gameCtx.lineWidth=1;
-    // Emoji
-    gameCtx.font = `${cs*.45}px serif`;
-    gameCtx.textAlign='center';
-    gameCtx.textBaseline='middle';
-    gameCtx.fillText(u.emoji, x+cs/2, y+cs/2);
-    // HP bar
-    if(u.hp>0) {
-      const barW = cs-6, barH=4;
-      const bx=x+3, by=y+cs-7;
-      gameCtx.fillStyle='#333';
-      gameCtx.fillRect(bx,by,barW,barH);
-      const pct=Math.max(0,u.hp/u.maxHp);
-      gameCtx.fillStyle=pct>.5?'#86efac':pct>.25?'#fbbf24':'#f87171';
-      gameCtx.fillRect(bx,by,barW*pct,barH);
-    }
-    gameCtx.globalAlpha=1;
-    // Player indicator dot
-    gameCtx.beginPath();
-    gameCtx.arc(x+cs-6, y+6, 3, 0, Math.PI*2);
-    gameCtx.fillStyle = u.player===1?'#7f7fd5':'#f97316';
-    gameCtx.fill();
-  });
-}
+      function showWin(winnerNum) {
+        const isMe = winnerNum === myPeerNum;
+        document.getElementById("overlay-title").textContent = isMe
+          ? "🏆 VICTORY!"
+          : "💀 DEFEAT";
+        document.getElementById("overlay-msg").textContent = isMe
+          ? "You eliminated the enemy Leader!"
+          : "Your Leader was eliminated!";
+        document.getElementById("overlay").style.display = "flex";
+      }
 
-// ─────────────────────────────────────────────
-//  LOG
-// ─────────────────────────────────────────────
-function log(msg, cls='sys') {
-  const el = document.getElementById('log');
-  const line = document.createElement('div');
-  line.className='log-line '+(cls||'sys');
-  line.textContent = msg;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
-}
+      function newRound(rebuild) {
+        document.getElementById("overlay").style.display = "none";
+        send({ type: "new_round", rebuild });
+        if (rebuild) {
+          buildDraft = null;
+          startEconomyPhase();
+        } else {
+          // Keep builds, go to map setup
+          mySpawnCells = [];
+          oppSpawnCells = [];
+          mySpawnConfirmed = false;
+          oppSpawnConfirmed = false;
+          myBuildConfirmed = true;
+          oppBuildConfirmed = true; // keep opp build
+          document.getElementById("hud").style.display = "none";
+          document.getElementById("game-canvas").style.display = "none";
+          document.getElementById("log").style.display = "none";
+          startMapSetup();
+        }
+      }
 
-// ─────────────────────────────────────────────
-//  INIT
-// ─────────────────────────────────────────────
-initPeer();
-</script>
-</body>
+      function handleNewRoundRequest(msg) {
+        // Show overlay too on receiving side
+        showWin(myPeerNum === 1 ? 2 : 1); // flip - the sender won
+        // Let them also pick
+      }
+
+      // ─────────────────────────────────────────────
+      //  RENDERING
+      // ─────────────────────────────────────────────
+      function renderGame() {
+        if (!gameState) return;
+        const cs = cellSize;
+        const sz = gameState.mapSize;
+        gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+        // Grid
+        for (let y = 0; y < sz; y++) {
+          for (let x = 0; x < sz; x++) {
+            gameCtx.fillStyle = (x + y) % 2 === 0
+              ? "#0a0a1a"
+              : "#0f0f22";
+            gameCtx.fillRect(x * cs, y * cs, cs, cs);
+            gameCtx.strokeStyle = "#1a1a3e";
+            gameCtx.strokeRect(x * cs, y * cs, cs, cs);
+          }
+        }
+
+        // Highlight move range
+        if (selectedUnitIdx !== null && currentAction === "move") {
+          const u = gameState.units[selectedUnitIdx];
+          for (let dy = -u.Move; dy <= u.Move; dy++) {
+            for (let dx = -u.Move; dx <= u.Move; dx++) {
+              if (
+                Math.abs(dx) + Math.abs(dy) <= u.Move &&
+                Math.abs(dx) + Math.abs(dy) > 0
+              ) {
+                const nx = u.x + dx, ny = u.y + dy;
+                if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
+                  gameCtx.fillStyle = "rgba(127,127,213,.25)";
+                  gameCtx.fillRect(nx * cs, ny * cs, cs, cs);
+                }
+              }
+            }
+          }
+        }
+        // Highlight fire range
+        if (selectedUnitIdx !== null && currentAction === "fire") {
+          const u = gameState.units[selectedUnitIdx];
+          for (let dy = -u.Range; dy <= u.Range; dy++) {
+            for (let dx = -u.Range; dx <= u.Range; dx++) {
+              if (Math.abs(dx) + Math.abs(dy) <= u.Range) {
+                const nx = u.x + dx, ny = u.y + dy;
+                if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
+                  gameCtx.fillStyle = "rgba(249,115,22,.2)";
+                  gameCtx.fillRect(nx * cs, ny * cs, cs, cs);
+                }
+              }
+            }
+          }
+        }
+
+        // Units
+        gameState.units.forEach((u) => {
+          const x = u.x * cs, y = u.y * cs;
+          if (u.hp <= 0) {
+            gameCtx.globalAlpha = 0.25;
+          }
+          // Background circle
+          gameCtx.beginPath();
+          gameCtx.arc(x + cs / 2, y + cs / 2, cs * .38, 0, Math.PI * 2);
+          gameCtx.fillStyle = u.player === myPeerNum
+            ? "#1a2a5e"
+            : "#3a1a1a";
+          gameCtx.fill();
+          gameCtx.strokeStyle = u.color;
+          gameCtx.lineWidth =
+            selectedUnitIdx === gameState.units.indexOf(u) ? 3 : 1.5;
+          gameCtx.stroke();
+          gameCtx.lineWidth = 1;
+          // Emoji
+          gameCtx.font = `${cs * .45}px serif`;
+          gameCtx.textAlign = "center";
+          gameCtx.textBaseline = "middle";
+          gameCtx.fillText(u.emoji, x + cs / 2, y + cs / 2);
+          // HP bar
+          if (u.hp > 0) {
+            const barW = cs - 6, barH = 4;
+            const bx = x + 3, by = y + cs - 7;
+            gameCtx.fillStyle = "#333";
+            gameCtx.fillRect(bx, by, barW, barH);
+            const pct = Math.max(0, u.hp / u.maxHp);
+            gameCtx.fillStyle = pct > .5
+              ? "#86efac"
+              : pct > .25
+              ? "#fbbf24"
+              : "#f87171";
+            gameCtx.fillRect(bx, by, barW * pct, barH);
+          }
+          gameCtx.globalAlpha = 1;
+          // Player indicator dot
+          gameCtx.beginPath();
+          gameCtx.arc(x + cs - 6, y + 6, 3, 0, Math.PI * 2);
+          gameCtx.fillStyle = u.player === 1 ? "#7f7fd5" : "#f97316";
+          gameCtx.fill();
+        });
+      }
+
+      // ─────────────────────────────────────────────
+      //  LOG
+      // ─────────────────────────────────────────────
+      function log(msg, cls = "sys") {
+        const el = document.getElementById("log");
+        const line = document.createElement("div");
+        line.className = "log-line " + (cls || "sys");
+        line.textContent = msg;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      // ─────────────────────────────────────────────
+      //  INIT
+      // ─────────────────────────────────────────────
+      initPeer();
+    </script>
+  </body>
 </html>

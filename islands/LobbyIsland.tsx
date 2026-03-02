@@ -7,7 +7,9 @@ interface LobbyIslandProps {
   userId: string;
 }
 
-export default function LobbyIsland({ initialRooms, userId }: LobbyIslandProps) {
+export default function LobbyIsland(
+  { initialRooms, userId }: LobbyIslandProps,
+) {
   const rooms = useSignal<RoomRecord[]>(initialRooms);
   const joinCode = useSignal("");
   const creating = useSignal(false);
@@ -51,7 +53,9 @@ export default function LobbyIsland({ initialRooms, userId }: LobbyIslandProps) 
         <div class="card-body gap-4">
           <div class="flex flex-col sm:flex-row gap-3">
             <button
-              class={`btn btn-primary flex-1 ${creating.value ? "loading" : ""}`}
+              class={`btn btn-primary flex-1 ${
+                creating.value ? "loading" : ""
+              }`}
               onClick={createRoom}
               disabled={creating.value}
             >

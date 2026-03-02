@@ -13,7 +13,11 @@ import type { HexCoord } from "./types.ts";
 
 // ─── Pixel conversion ─────────────────────────────────────────────────────────
 
-export function hexToPixel(q: number, r: number, size: number): { px: number; py: number } {
+export function hexToPixel(
+  q: number,
+  r: number,
+  size: number,
+): { px: number; py: number } {
   return {
     px: size * (3 / 2) * q,
     py: size * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r),

@@ -8,9 +8,14 @@ import type {
   ServerMessage,
   UnitBuild,
 } from "../lib/types.ts";
-import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
+import {
+  getDefaultBuild,
+  MAX_PER_UNIT,
+  randomizeBuild,
+  TOTAL_POINTS,
+} from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
-import { hexToPixel, pixelToHex, gridPixelSize } from "../lib/hex-pixels.ts";
+import { gridPixelSize, hexToPixel, pixelToHex } from "../lib/hex-pixels.ts";
 interface GameIslandProps {
   roomCode: string;
   userId: string;
@@ -26,7 +31,8 @@ interface LogLine {
 }
 
 export default function GameIsland(
-  { roomCode, userId, playerNum, initialPhase, userName, userAvatar }: GameIslandProps,
+  { roomCode, userId, playerNum, initialPhase, userName, userAvatar }:
+    GameIslandProps,
 ) {
   // ── Connection state ──────────────────────────────────────────────────────
   const wsRef = useRef<WebSocket | null>(null);
@@ -46,7 +52,12 @@ export default function GameIsland(
   const mapRows = useSignal(12);
   const mapColsFromHost = useSignal<number | null>(null);
   const spawnCanvasRef = useRef<HTMLCanvasElement>(null);
-  const spawnPlacements = useSignal<Array<HexCoord | null>>([null, null, null, null]);
+  const spawnPlacements = useSignal<Array<HexCoord | null>>([
+    null,
+    null,
+    null,
+    null,
+  ]);
   const draggingUnit = useSignal<number | null>(null);
   const hoverCell = useSignal<HexCoord | null>(null);
   const spawnConfirmed = useSignal(false);
@@ -59,13 +70,17 @@ export default function GameIsland(
   const currentAction = useSignal<"move" | "reload" | "fire" | null>(null);
   const isMyTurn = useSignal(false);
   const phaserRootRef = useRef<HTMLDivElement>(null);
-  const phaserGameRef = useRef<Phaser.Game | null>(null);
+  const phaserGameRef = useRef<{ destroy(removeCanvas: boolean): void } | null>(
+    null,
+  );
 
   // ── Turn timer ────────────────────────────────────────────────────────────
   const turnDeadline = useSignal<number | null>(null);
   const turnDurationMs = useSignal<number>(60_000);
   const timedOut = useSignal(false);
-  const gameOver = useSignal<{ winnerPlayerNum: 1 | 2; winnerId: string } | null>(null);
+  const gameOver = useSignal<
+    { winnerPlayerNum: 1 | 2; winnerId: string } | null
+  >(null);
   const newRoundVoted = useSignal(false);
 
   // ── Log ───────────────────────────────────────────────────────────────────
@@ -77,151 +92,9 @@ export default function GameIsland(
   const debugOpen = useSignal(false);
   const debugRef = useRef<HTMLDivElement>(null);
 
-  // ── Phaser game instance ──────────────────────────────────────────────────
-  const phaserGameRef = useRef<{ destroy(removeCanvas: boolean): void } | null>(null);
-
   function addLog(text: string, kind: LogLine["kind"] = "sys") {
     logLines.value = [...logLines.value, { text, kind }];
   }
-
-  // ── Phaser combat scene lifecycle ─────────────────────────────────────────
-  useEffect(() => {
-    if (phase.value !== "combat" && phase.value !== "result") return;
-    if (phaserGameRef.current) return; // already initialised
-    const root = phaserRootRef.current;
-    if (!root) return;
-
-    let destroyed = false;
-
-    (async () => {
-      // Dynamic import keeps Phaser out of the SSR bundle
-      const Phaser = (await import("phaser")).default ?? await import("phaser");
-      const { default: CombatScene } = await import("../phaser/CombatScene.ts");
-
-      if (destroyed) return;
-
-      const cols = mapCols.value;
-      const rows = mapRows.value;
-      const hexSize = 32;
-      const PAD = 40;
-      // Approximate canvas dims (matches CombatScene.canvasSize logic)
-      const lastPx = hexToPixel(cols - 1, rows - 1, hexSize);
-      const estW = lastPx.px + PAD * 2 + hexSize;
-      const estH = lastPx.py + PAD * 2 + hexSize;
-
-      const game = new Phaser.Game({
-        type: Phaser.AUTO,
-        width: estW,
-        height: estH,
-        parent: root,
-        backgroundColor: "#0a0a1a",
-        scene: [CombatScene],
-        scale: { mode: Phaser.Scale.NONE },
-      });
-      phaserGameRef.current = game;
-
-      // Wait for the scene to be ready, then push initial state
-      game.events.once("ready", () => {
-        if (destroyed) return;
-        const scene = game.scene.getScene("CombatScene");
-        if (!scene) return;
-
-        // Push initial registry values
-        scene.registry.set("gameState", gameState.value);
-        scene.registry.set("selectedUnitId", selectedUnitId.value);
-        scene.registry.set("currentAction", currentAction.value);
-        scene.registry.set("turnDeadline", turnDeadline.value);
-        scene.registry.set("turnDurationMs", turnDurationMs.value);
-        scene.registry.set("timedOut", timedOut.value);
-
-        // Listen for hex clicks from CombatScene
-        scene.events.on("hex_clicked", (coord: HexCoord) => {
-          if (!isMyTurn.value || !selectedUnitId.value) return;
-          const state = gameState.value;
-          if (!state) return;
-
-          if (currentAction.value === "move") {
-            send({
-              type: "action",
-              action: { type: "move", unitId: selectedUnitId.value, q: coord.q, r: coord.r },
-            });
-          } else if (currentAction.value === "fire") {
-            const target = state.units.find(
-              (u) => u.q === coord.q && u.r === coord.r && u.player !== playerNum && u.hp > 0,
-            );
-            if (target) {
-              send({
-                type: "action",
-                action: { type: "fire", unitId: selectedUnitId.value, targetId: target.id },
-              });
-            }
-          } else {
-            // No action selected — clicking a hex selects our unit on it
-            const ownUnit = state.units.find(
-              (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
-            );
-            if (ownUnit) {
-              selectedUnitId.value = selectedUnitId.value === ownUnit.id ? null : ownUnit.id;
-              currentAction.value = null;
-            }
-          }
-        });
-
-        // Start the scene with init data
-        scene.scene.restart({ cols, rows, playerNum });
-      });
-    })();
-
-    return () => {
-      destroyed = true;
-      if (phaserGameRef.current) {
-        phaserGameRef.current.destroy(true);
-        phaserGameRef.current = null;
-      }
-    };
-  }, [phase.value]);
-
-  // ── Sync signals → Phaser registry ────────────────────────────────────────
-  useEffect(() => {
-    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
-    if (!game) return;
-    const scene = game.scene.getScene("CombatScene");
-    if (!scene) return;
-    scene.registry.set("gameState", gameState.value);
-  }, [gameState.value]);
-
-  useEffect(() => {
-    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
-    if (!game) return;
-    const scene = game.scene.getScene("CombatScene");
-    if (!scene) return;
-    scene.registry.set("selectedUnitId", selectedUnitId.value);
-  }, [selectedUnitId.value]);
-
-  useEffect(() => {
-    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
-    if (!game) return;
-    const scene = game.scene.getScene("CombatScene");
-    if (!scene) return;
-    scene.registry.set("currentAction", currentAction.value);
-  }, [currentAction.value]);
-
-  useEffect(() => {
-    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
-    if (!game) return;
-    const scene = game.scene.getScene("CombatScene");
-    if (!scene) return;
-    scene.registry.set("turnDeadline", turnDeadline.value);
-    scene.registry.set("turnDurationMs", turnDurationMs.value);
-  }, [turnDeadline.value, turnDurationMs.value]);
-
-  useEffect(() => {
-    const game = phaserGameRef.current as { scene: { getScene(key: string): { registry: { set(key: string, val: unknown): void } } | null } } | null;
-    if (!game) return;
-    const scene = game.scene.getScene("CombatScene");
-    if (!scene) return;
-    scene.registry.set("timedOut", timedOut.value);
-  }, [timedOut.value]);
 
   // ── WebSocket setup ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -246,7 +119,10 @@ export default function GameIsland(
         }
         if (playerNum === 1) {
           const t = new Date().toTimeString().slice(0, 8);
-          debugEntries.value = [...debugEntries.value, `[${t}] IN  ${evt.data}`];
+          debugEntries.value = [
+            ...debugEntries.value,
+            `[${t}] IN  ${evt.data}`,
+          ];
         }
         handleServerMessage(msg);
       };
@@ -427,7 +303,14 @@ export default function GameIsland(
   useEffect(() => {
     if (phase.value !== "spawn") return;
     renderSpawn();
-  }, [phase.value, spawnPlacements.value, hoverCell.value, draggingUnit.value, mapCols.value, mapRows.value]);
+  }, [
+    phase.value,
+    spawnPlacements.value,
+    hoverCell.value,
+    draggingUnit.value,
+    mapCols.value,
+    mapRows.value,
+  ]);
 
   // ── Phaser game initialization (combat phase) ────────────────────────────
   useEffect(() => {
@@ -495,7 +378,14 @@ export default function GameIsland(
     game.registry.set("turnDeadline", turnDeadline.value);
     game.registry.set("turnDurationMs", turnDurationMs.value);
     game.registry.set("timedOut", timedOut.value);
-  }, [gameState.value, selectedUnitId.value, currentAction.value, turnDeadline.value, turnDurationMs.value, timedOut.value]);
+  }, [
+    gameState.value,
+    selectedUnitId.value,
+    currentAction.value,
+    turnDeadline.value,
+    turnDurationMs.value,
+    timedOut.value,
+  ]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Spawn canvas helpers
@@ -513,7 +403,7 @@ export default function GameIsland(
 
   const UNIT_DEFS = [
     { name: "Leader", emoji: "👑", color: "#fbbf24" },
-    { name: "Heavy",  emoji: "🛡️", color: "#ef4444" },
+    { name: "Heavy", emoji: "🛡️", color: "#ef4444" },
     { name: "Sniper", emoji: "🎯", color: "#a855f7" },
     { name: "Dasher", emoji: "⚡", color: "#22c55e" },
   ] as const;
@@ -532,7 +422,8 @@ export default function GameIsland(
       const angle = (Math.PI / 3) * k;
       const vx = cx + size * Math.cos(angle);
       const vy = cy + size * Math.sin(angle);
-      if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+      if (k === 0) ctx.moveTo(vx, vy);
+      else ctx.lineTo(vx, vy);
     }
     ctx.closePath();
     ctx.fillStyle = fill;
@@ -568,13 +459,17 @@ export default function GameIsland(
         const cx = px + hexSize;
         const cy = py + hexSize;
         const inZone = isInSpawnZone(q, r);
-        const isHover = draggingUnit.value !== null && hover?.q === q && hover?.r === r;
+        const isHover = draggingUnit.value !== null && hover?.q === q &&
+          hover?.r === r;
 
         const base = (q + r) % 2 === 0 ? "#0a0a1a" : "#0f0f22";
-        const overlay = isHover && inZone  ? "rgba(127,127,213,0.6)"
-          : isHover && !inZone            ? "rgba(239,68,68,0.4)"
-          : inZone                        ? "rgba(127,127,213,0.18)"
-          :                                 "rgba(0,0,0,0.40)";
+        const overlay = isHover && inZone
+          ? "rgba(127,127,213,0.6)"
+          : isHover && !inZone
+          ? "rgba(239,68,68,0.4)"
+          : inZone
+          ? "rgba(127,127,213,0.18)"
+          : "rgba(0,0,0,0.40)";
 
         // Draw base then overlay in two passes
         drawHex(ctx, cx, cy, hexSize - 1, base, "#1a1a3e");
@@ -590,7 +485,8 @@ export default function GameIsland(
     }
 
     // Zone divider (dashed vertical line between zones)
-    const xA = hexToPixel(half - 1, 0, hexSize).px + hexSize + hexSize * Math.cos(0);
+    const xA = hexToPixel(half - 1, 0, hexSize).px + hexSize +
+      hexSize * Math.cos(0);
     const xB = hexToPixel(half, 0, hexSize).px + hexSize - hexSize;
     const divX = (xA + xB) / 2;
     ctx.strokeStyle = "#7f7fd5";
@@ -693,10 +589,11 @@ export default function GameIsland(
     }
   }
 
-
   function doReload() {
     if (!isMyTurn.value || !selectedUnitId.value) return;
-    const unit = gameState.value?.units.find((u) => u.id === selectedUnitId.value);
+    const unit = gameState.value?.units.find((u) =>
+      u.id === selectedUnitId.value
+    );
     if (!unit || unit.loaded) {
       addLog("Unit is already loaded.", "sys");
       return;
@@ -711,7 +608,9 @@ export default function GameIsland(
     // If no unit selected, select unit at the clicked hex (if ours)
     if (!selectedUnitId.value) {
       const unit = state.units.find(
-        (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
+        (u) =>
+          u.q === coord.q && u.r === coord.r && u.player === playerNum &&
+          u.hp > 0,
       );
       if (unit) {
         selectedUnitId.value = unit.id;
@@ -731,7 +630,9 @@ export default function GameIsland(
     } else if (currentAction.value === "fire") {
       // Find enemy at coord
       const target = state.units.find(
-        (u) => u.q === coord.q && u.r === coord.r && u.player !== playerNum && u.hp > 0,
+        (u) =>
+          u.q === coord.q && u.r === coord.r && u.player !== playerNum &&
+          u.hp > 0,
       );
       if (target) {
         send({
@@ -742,7 +643,9 @@ export default function GameIsland(
     } else {
       // No action mode — try selecting a different own unit or deselect
       const clicked = state.units.find(
-        (u) => u.q === coord.q && u.r === coord.r && u.player === playerNum && u.hp > 0,
+        (u) =>
+          u.q === coord.q && u.r === coord.r && u.player === playerNum &&
+          u.hp > 0,
       );
       if (clicked) {
         selectedUnitId.value = clicked.id;
@@ -766,14 +669,17 @@ export default function GameIsland(
   function confirmBuild() {
     const used = totalUsed();
     if (used !== TOTAL_POINTS) {
-      buildError.value = `Must use exactly ${TOTAL_POINTS} points (currently ${used}).`;
+      buildError.value =
+        `Must use exactly ${TOTAL_POINTS} points (currently ${used}).`;
       return;
     }
     for (let i = 0; i < 4; i++) {
       const u = buildDraft.value[i];
       const total = u.Move + u.Health + u.Damage + u.Range;
       if (total > MAX_PER_UNIT) {
-        buildError.value = `${UNIT_TYPES[i]} has ${total} pts (max ${MAX_PER_UNIT}).`;
+        buildError.value = `${
+          UNIT_TYPES[i]
+        } has ${total} pts (max ${MAX_PER_UNIT}).`;
         return;
       }
       for (const stat of ["Move", "Health", "Damage", "Range"] as const) {
@@ -813,12 +719,16 @@ export default function GameIsland(
       <div class="mt-4 border border-warning/30 rounded bg-base-200">
         <button
           class="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-base-300 transition-colors"
-          onClick={() => { debugOpen.value = !debugOpen.value; }}
+          onClick={() => {
+            debugOpen.value = !debugOpen.value;
+          }}
         >
           <span class="text-xs font-mono text-warning/70">
             🐛 Debug (host only) — {debugEntries.value.length} msgs
           </span>
-          <span class="text-xs text-base-content/40">{debugOpen.value ? "▲" : "▼"}</span>
+          <span class="text-xs text-base-content/40">
+            {debugOpen.value ? "▲" : "▼"}
+          </span>
         </button>
         {debugOpen.value && (
           <>
@@ -831,7 +741,9 @@ export default function GameIsland(
                 : debugEntries.value.map((e, i) => (
                   <div
                     key={i}
-                    class={e.includes(" IN  ") ? "text-success/80" : "text-warning/80"}
+                    class={e.includes(" IN  ")
+                      ? "text-success/80"
+                      : "text-warning/80"}
                   >
                     {e}
                   </div>
@@ -848,7 +760,9 @@ export default function GameIsland(
               </button>
               <button
                 class="btn btn-xs btn-ghost"
-                onClick={() => { debugEntries.value = []; }}
+                onClick={() => {
+                  debugEntries.value = [];
+                }}
               >
                 Clear
               </button>
@@ -905,8 +819,14 @@ export default function GameIsland(
       <div class="flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <h2 class="text-primary font-bold tracking-widest">BUILD PHASE</h2>
-          <div class={`font-mono font-bold ${remaining < 0 ? "text-error" : "text-success"}`}>
-            {used}/{TOTAL_POINTS} pts{remaining !== 0 ? ` (${Math.abs(remaining)} ${remaining > 0 ? "left" : "over"})` : " ✓"}
+          <div
+            class={`font-mono font-bold ${
+              remaining < 0 ? "text-error" : "text-success"
+            }`}
+          >
+            {used}/{TOTAL_POINTS} pts{remaining !== 0
+              ? ` (${Math.abs(remaining)} ${remaining > 0 ? "left" : "over"})`
+              : " ✓"}
           </div>
         </div>
 
@@ -918,8 +838,13 @@ export default function GameIsland(
               <div key={name} class="card bg-base-200 border border-base-300">
                 <div class="card-body p-3 gap-2">
                   <h3 class="font-bold text-warning text-sm">
-                    {name === "Leader" ? "👑" : name === "Heavy" ? "🛡️" : name === "Sniper" ? "🎯" : "⚡"}{" "}
-                    {name}
+                    {name === "Leader"
+                      ? "👑"
+                      : name === "Heavy"
+                      ? "🛡️"
+                      : name === "Sniper"
+                      ? "🎯"
+                      : "⚡"} {name}
                     <span class="text-base-content/40 font-normal ml-1">
                       ({unitTotal}pts)
                     </span>
@@ -970,7 +895,9 @@ export default function GameIsland(
             🎲 Randomize
           </button>
           <button
-            class={`btn btn-primary ${buildConfirmed.value ? "btn-disabled" : ""}`}
+            class={`btn btn-primary ${
+              buildConfirmed.value ? "btn-disabled" : ""
+            }`}
             disabled={buildConfirmed.value || remaining !== 0}
             onClick={confirmBuild}
           >
@@ -1000,10 +927,17 @@ export default function GameIsland(
         <div class="flex items-center justify-between">
           <h2 class="text-primary font-bold tracking-widest">SPAWN PHASE</h2>
           {allPlaced
-            ? <span class="text-sm font-mono text-success">All units placed ✓</span>
-            : <span class="text-sm font-mono text-warning">
-                {spawnPlacements.value.filter((p) => p !== null).length}/4 placed
-              </span>}
+            ? (
+              <span class="text-sm font-mono text-success">
+                All units placed ✓
+              </span>
+            )
+            : (
+              <span class="text-sm font-mono text-warning">
+                {spawnPlacements.value.filter((p) => p !== null).length}/4
+                placed
+              </span>
+            )}
         </div>
 
         {playerNum === 1 && (
@@ -1012,7 +946,9 @@ export default function GameIsland(
             {([8, 12, 16] as const).map((s) => (
               <button
                 key={s}
-                class={`btn btn-xs ${mapCols.value === s ? "btn-primary" : "btn-outline"}`}
+                class={`btn btn-xs ${
+                  mapCols.value === s ? "btn-primary" : "btn-outline"
+                }`}
                 disabled={spawnConfirmed.value}
                 onClick={() => {
                   spawnPlacements.value = [null, null, null, null];
@@ -1028,7 +964,9 @@ export default function GameIsland(
         )}
         {playerNum === 2 && (
           <p class="text-base-content/50 text-sm">
-            Map size: {mapColsFromHost.value ? `${mapColsFromHost.value}×${mapRows.value}` : "waiting for host..."}
+            Map size: {mapColsFromHost.value
+              ? `${mapColsFromHost.value}×${mapRows.value}`
+              : "waiting for host..."}
           </p>
         )}
 
@@ -1041,11 +979,13 @@ export default function GameIsland(
                 key={u.name}
                 draggable={!isPlaced && !spawnConfirmed.value}
                 class={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded border select-none transition-all
-                  ${isPlaced
+                  ${
+                  isPlaced
                     ? "border-success/50 bg-success/10 opacity-50 cursor-default"
                     : spawnConfirmed.value
                     ? "border-base-300 opacity-40 cursor-default"
-                    : "border-base-300 bg-base-100 hover:bg-base-300 hover:border-primary cursor-grab"}
+                    : "border-base-300 bg-base-100 hover:bg-base-300 hover:border-primary cursor-grab"
+                }
                   ${draggingUnit.value === i ? "opacity-30 scale-95" : ""}`}
                 onDragStart={(e: DragEvent) => {
                   draggingUnit.value = i;
@@ -1057,8 +997,14 @@ export default function GameIsland(
                 }}
               >
                 <span class="text-xl leading-none">{u.emoji}</span>
-                <span class="text-xs font-mono text-base-content/70">{u.name}</span>
-                <span class={`text-xs ${isPlaced ? "text-success" : "text-base-content/30"}`}>
+                <span class="text-xs font-mono text-base-content/70">
+                  {u.name}
+                </span>
+                <span
+                  class={`text-xs ${
+                    isPlaced ? "text-success" : "text-base-content/30"
+                  }`}
+                >
                   {isPlaced ? "✓" : "drag"}
                 </span>
               </div>
@@ -1115,7 +1061,9 @@ export default function GameIsland(
       {/* Turn indicator */}
       <div class="flex items-center justify-between">
         <div
-          class={`font-bold font-mono text-lg ${isMyTurn.value ? "text-warning" : "text-base-content/40"}`}
+          class={`font-bold font-mono text-lg ${
+            isMyTurn.value ? "text-warning" : "text-base-content/40"
+          }`}
         >
           {isMyTurn.value ? "⚡ YOUR TURN" : "⏳ OPPONENT'S TURN"}
         </div>
@@ -1157,7 +1105,11 @@ export default function GameIsland(
                         key={u.id}
                         class={`rounded p-2 cursor-pointer text-xs border transition-colors
                           ${u.hp <= 0 ? "opacity-40 cursor-not-allowed" : ""}
-                          ${isSelected ? "border-warning bg-base-300" : "border-base-300 bg-base-100 hover:border-primary"}`}
+                          ${
+                          isSelected
+                            ? "border-warning bg-base-300"
+                            : "border-base-300 bg-base-100 hover:border-primary"
+                        }`}
                         onClick={() => {
                           if (!isMyTurn.value || u.hp <= 0) return;
                           selectedUnitId.value = isSelected ? null : u.id;
@@ -1168,7 +1120,8 @@ export default function GameIsland(
                           {u.emoji} {u.name}
                         </div>
                         <div class="text-base-content/60 font-mono">
-                          HP:{Math.max(0, u.hp)}/{u.maxHp} · Mv:{u.Move} · Dmg:{u.Damage} · Rng:{u.Range}
+                          HP:{Math.max(0, u.hp)}/{u.maxHp} · Mv:{u.Move}{" "}
+                          · Dmg:{u.Damage} · Rng:{u.Range}
                           · {u.loaded ? "🔵" : "🔴"}
                         </div>
                         <div class="h-1 bg-base-300 rounded mt-1">
@@ -1190,7 +1143,11 @@ export default function GameIsland(
               <div class="card-body p-3 gap-2">
                 <h3 class="text-primary text-xs font-bold">ACTIONS</h3>
                 <button
-                  class={`btn btn-sm w-full ${currentAction.value === "move" ? "btn-warning" : "btn-outline"}`}
+                  class={`btn btn-sm w-full ${
+                    currentAction.value === "move"
+                      ? "btn-warning"
+                      : "btn-outline"
+                  }`}
                   onClick={() =>
                     currentAction.value = currentAction.value === "move"
                       ? null
@@ -1205,7 +1162,9 @@ export default function GameIsland(
                   Reload
                 </button>
                 <button
-                  class={`btn btn-sm w-full ${currentAction.value === "fire" ? "btn-error" : "btn-outline"}`}
+                  class={`btn btn-sm w-full ${
+                    currentAction.value === "fire" ? "btn-error" : "btn-outline"
+                  }`}
                   onClick={() =>
                     currentAction.value = currentAction.value === "fire"
                       ? null
@@ -1248,7 +1207,9 @@ export default function GameIsland(
                     return (
                       <div
                         key={u.id}
-                        class={`rounded p-2 text-xs border border-base-300 ${u.hp <= 0 ? "opacity-40" : ""}`}
+                        class={`rounded p-2 text-xs border border-base-300 ${
+                          u.hp <= 0 ? "opacity-40" : ""
+                        }`}
                       >
                         <div class="font-bold text-base-content/70">
                           {u.emoji} {u.name}

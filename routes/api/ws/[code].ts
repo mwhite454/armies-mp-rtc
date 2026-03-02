@@ -1,5 +1,10 @@
 import { getSessionUser } from "../../../lib/auth.ts";
-import { getRoom as getKvRoom, saveGameHistory, saveRoom, updateUserStats } from "../../../lib/kv.ts";
+import {
+  getRoom as getKvRoom,
+  saveGameHistory,
+  saveRoom,
+  updateUserStats,
+} from "../../../lib/kv.ts";
 import { define } from "../../../utils.ts";
 import {
   applyAction,
@@ -18,9 +23,7 @@ import {
   sendToUser,
   unregisterSocket,
 } from "../../../lib/room-manager.ts";
-import type {
-  ActiveRoom,
-} from "../../../lib/room-manager.ts";
+import type { ActiveRoom } from "../../../lib/room-manager.ts";
 import type {
   ClientMessage,
   GameState,
@@ -38,7 +41,11 @@ function startTurnTimer(
   clearTurnTimer(room);
   const deadline = Date.now() + TURN_TIMER_MS;
   room.turnDeadline = deadline;
-  broadcastToAll(room, { type: "turn_timer_start", deadline, turnDurationMs: TURN_TIMER_MS });
+  broadcastToAll(room, {
+    type: "turn_timer_start",
+    deadline,
+    turnDurationMs: TURN_TIMER_MS,
+  });
 
   room.turnTimerId = setTimeout(async () => {
     if (room.phase !== "combat") return;
@@ -150,9 +157,7 @@ export const handler = define.handlers({
       const opponentId = playerNum === 1
         ? kvRoom.guestUserId
         : kvRoom.hostUserId;
-      const opponentInRoom = opponentId
-        ? room.sockets.has(opponentId)
-        : false;
+      const opponentInRoom = opponentId ? room.sockets.has(opponentId) : false;
       let opponentName: string | null = null;
       let opponentAvatar: string | null = null;
       if (opponentId) {
@@ -256,13 +261,16 @@ export const handler = define.handlers({
           const MIN_DIM = 4;
           const MAX_DIM = 32;
           if (
-            !Number.isInteger(msg.mapCols) || msg.mapCols < MIN_DIM || msg.mapCols > MAX_DIM ||
-            !Number.isInteger(msg.mapRows) || msg.mapRows < MIN_DIM || msg.mapRows > MAX_DIM
+            !Number.isInteger(msg.mapCols) || msg.mapCols < MIN_DIM ||
+            msg.mapCols > MAX_DIM ||
+            !Number.isInteger(msg.mapRows) || msg.mapRows < MIN_DIM ||
+            msg.mapRows > MAX_DIM
           ) {
             sendToUser(room, user.id, {
               type: "error",
               code: "INVALID_MAP_SIZE",
-              message: `Map dimensions must be integers between ${MIN_DIM} and ${MAX_DIM}.`,
+              message:
+                `Map dimensions must be integers between ${MIN_DIM} and ${MAX_DIM}.`,
             });
             return;
           }
@@ -271,12 +279,21 @@ export const handler = define.handlers({
           kvRoom.mapCols = msg.mapCols;
           kvRoom.mapRows = msg.mapRows;
           await saveRoom(kvRoom);
-          broadcast(room, { type: "map_size", mapCols: msg.mapCols, mapRows: msg.mapRows }, user.id);
+          broadcast(room, {
+            type: "map_size",
+            mapCols: msg.mapCols,
+            mapRows: msg.mapRows,
+          }, user.id);
           break;
         }
 
         case "spawn_ready": {
-          const errors = validateSpawn(msg.spawn, room.mapCols, room.mapRows, playerNum);
+          const errors = validateSpawn(
+            msg.spawn,
+            room.mapCols,
+            room.mapRows,
+            playerNum,
+          );
           if (errors.length) {
             sendToUser(room, user.id, {
               type: "error",
@@ -328,7 +345,9 @@ export const handler = define.handlers({
           if (winner) {
             room.phase = "result";
             kvRoom.status = "result";
-            const winnerId = winner === 1 ? kvRoom.hostUserId : (kvRoom.guestUserId ?? kvRoom.hostUserId);
+            const winnerId = winner === 1
+              ? kvRoom.hostUserId
+              : (kvRoom.guestUserId ?? kvRoom.hostUserId);
             kvRoom.winnerId = winnerId;
             await saveRoom(kvRoom);
 
@@ -374,7 +393,9 @@ export const handler = define.handlers({
 
           // Check if both voted
           if (room.newRoundVotes.size === 2) {
-            const rebuild = Array.from(room.newRoundVotes.values()).some((v) => v);
+            const rebuild = Array.from(room.newRoundVotes.values()).some((v) =>
+              v
+            );
             room.newRoundVotes.clear();
 
             if (rebuild) {
@@ -459,9 +480,12 @@ async function buildAndStartGame(
 
   if (!p1Build || !p2Build || !p1Spawn || !p2Spawn) {
     console.error("buildAndStartGame: missing build/spawn data", {
-      hostId, guestId,
-      hasP1Build: !!p1Build, hasP2Build: !!p2Build,
-      hasP1Spawn: !!p1Spawn, hasP2Spawn: !!p2Spawn,
+      hostId,
+      guestId,
+      hasP1Build: !!p1Build,
+      hasP2Build: !!p2Build,
+      hasP1Spawn: !!p1Spawn,
+      hasP2Spawn: !!p2Spawn,
     });
     broadcastToAll(room, {
       type: "error",

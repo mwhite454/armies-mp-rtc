@@ -6,7 +6,7 @@
  * Reacts to GameState changes pushed through `scene.registry`.
  */
 import * as Phaser from "phaser";
-import { hexToPixel, hexRange, hexDimensions } from "../lib/hex-pixels.ts";
+import { hexDimensions, hexRange, hexToPixel } from "../lib/hex-pixels.ts";
 import type { GameState, HexCoord, Unit } from "../lib/types.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -20,10 +20,12 @@ function hexPoints(cx: number, cy: number, size: number): Phaser.Geom.Point[] {
   const pts: Phaser.Geom.Point[] = [];
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI / 180) * (60 * i);
-    pts.push(new Phaser.Geom.Point(
-      cx + size * Math.cos(angle),
-      cy + size * Math.sin(angle),
-    ));
+    pts.push(
+      new Phaser.Geom.Point(
+        cx + size * Math.cos(angle),
+        cy + size * Math.sin(angle),
+      ),
+    );
   }
   return pts;
 }
@@ -81,35 +83,48 @@ export default class CombatScene extends Phaser.Scene {
     });
 
     // ── Registry listeners ───────────────────────────────────────────────────
-    this.registry.events.on("changedata-gameState", (_: unknown, state: GameState) => {
-      const dimensionsChanged = state.mapCols !== this.cols || state.mapRows !== this.rows;
-      this.cols = state.mapCols;
-      this.rows = state.mapRows;
-      if (dimensionsChanged) {
-        const { w, h } = this.canvasSize();
-        this.scale.resize(w, h);
-        this.drawGrid();
-        this.drawTimerBackground();
-      }
-      this.refreshUnits(state);
-      this.refreshOverlays(state);
-    });
+    this.registry.events.on(
+      "changedata-gameState",
+      (_: unknown, state: GameState) => {
+        const dimensionsChanged = state.mapCols !== this.cols ||
+          state.mapRows !== this.rows;
+        this.cols = state.mapCols;
+        this.rows = state.mapRows;
+        if (dimensionsChanged) {
+          const { w, h } = this.canvasSize();
+          this.scale.resize(w, h);
+          this.drawGrid();
+          this.drawTimerBackground();
+        }
+        this.refreshUnits(state);
+        this.refreshOverlays(state);
+      },
+    );
 
-    this.registry.events.on("changedata-selectedUnitId", (_: unknown, id: string | null) => {
-      this.selectedUnitId = id;
-      const state = this.registry.get("gameState") as GameState | undefined;
-      if (state) this.refreshOverlays(state);
-    });
+    this.registry.events.on(
+      "changedata-selectedUnitId",
+      (_: unknown, id: string | null) => {
+        this.selectedUnitId = id;
+        const state = this.registry.get("gameState") as GameState | undefined;
+        if (state) this.refreshOverlays(state);
+      },
+    );
 
-    this.registry.events.on("changedata-currentAction", (_: unknown, action: "move" | "reload" | "fire" | null) => {
-      this.currentAction = action;
-      const state = this.registry.get("gameState") as GameState | undefined;
-      if (state) this.refreshOverlays(state);
-    });
+    this.registry.events.on(
+      "changedata-currentAction",
+      (_: unknown, action: "move" | "reload" | "fire" | null) => {
+        this.currentAction = action;
+        const state = this.registry.get("gameState") as GameState | undefined;
+        if (state) this.refreshOverlays(state);
+      },
+    );
 
-    this.registry.events.on("changedata-timedOut", (_: unknown, val: boolean) => {
-      this.timerFlashing = val;
-    });
+    this.registry.events.on(
+      "changedata-timedOut",
+      (_: unknown, val: boolean) => {
+        this.timerFlashing = val;
+      },
+    );
 
     // Bootstrap from existing registry values
     const initState = this.registry.get("gameState") as GameState | undefined;
@@ -118,8 +133,10 @@ export default class CombatScene extends Phaser.Scene {
       this.rows = initState.mapRows;
       this.refreshUnits(initState);
     }
-    this.selectedUnitId = this.registry.get("selectedUnitId") as string | null ?? null;
-    this.currentAction = this.registry.get("currentAction") as "move" | "fire" | null ?? null;
+    this.selectedUnitId =
+      this.registry.get("selectedUnitId") as string | null ?? null;
+    this.currentAction =
+      this.registry.get("currentAction") as "move" | "fire" | null ?? null;
   }
 
   // ── Update (runs every frame) ──────────────────────────────────────────────
@@ -245,7 +262,10 @@ export default class CombatScene extends Phaser.Scene {
     return container;
   }
 
-  private updateUnitContainer(container: Phaser.GameObjects.Container, unit: Unit) {
+  private updateUnitContainer(
+    container: Phaser.GameObjects.Container,
+    unit: Unit,
+  ) {
     const { x, y } = this.hexCenter(unit.q, unit.r);
     container.setPosition(x, y);
 
@@ -257,7 +277,8 @@ export default class CombatScene extends Phaser.Scene {
     circle.clear();
 
     const fillColor = unit.player === this.playerNum ? 0x1a2a5e : 0x3a1a1a;
-    const unitColorNum = Phaser.Display.Color.HexStringToColor(unit.color).color;
+    const unitColorNum =
+      Phaser.Display.Color.HexStringToColor(unit.color).color;
     const isSelected = unit.id === this.selectedUnitId;
 
     circle.fillStyle(fillColor, 1);
@@ -314,10 +335,13 @@ export default class CombatScene extends Phaser.Scene {
     if (!deadline) return;
 
     const now = Date.now();
-    const configuredDuration = this.registry.get("turnDurationMs") as number | null;
-    const totalMs = typeof configuredDuration === "number" && configuredDuration > 0
-      ? configuredDuration
-      : 60_000; // default to 60s to match server if not provided
+    const configuredDuration = this.registry.get("turnDurationMs") as
+      | number
+      | null;
+    const totalMs =
+      typeof configuredDuration === "number" && configuredDuration > 0
+        ? configuredDuration
+        : 60_000; // default to 60s to match server if not provided
     const remaining = Math.max(0, deadline - now);
     const pct = Math.min(1, remaining / totalMs);
 

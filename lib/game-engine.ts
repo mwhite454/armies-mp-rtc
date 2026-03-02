@@ -2,7 +2,13 @@
  * Pure server-side game logic — no DOM dependencies.
  * Ported from src/tactical-game.html.
  */
-import type { GameAction, GameState, HexCoord, Unit, UnitBuild } from "./types.ts";
+import type {
+  GameAction,
+  GameState,
+  HexCoord,
+  Unit,
+  UnitBuild,
+} from "./types.ts";
 import { UNIT_COLORS, UNIT_EMOJIS, UNIT_TYPES } from "./types.ts";
 
 // ─── Hex Math (flat-top axial) ─────────────────────────────────────────────────────
@@ -160,8 +166,12 @@ export function validateSpawn(
 // ─── Win Condition ────────────────────────────────────────────────────────────
 
 export function checkWinCondition(state: GameState): 1 | 2 | null {
-  const p1Leader = state.units.find((u) => u.player === 1 && u.name === "Leader");
-  const p2Leader = state.units.find((u) => u.player === 2 && u.name === "Leader");
+  const p1Leader = state.units.find((u) =>
+    u.player === 1 && u.name === "Leader"
+  );
+  const p2Leader = state.units.find((u) =>
+    u.player === 2 && u.name === "Leader"
+  );
   if (p1Leader && p1Leader.hp <= 0) return 2;
   if (p2Leader && p2Leader.hp <= 0) return 1;
   return null;
@@ -213,7 +223,10 @@ export function applyAction(
 
   switch (action.type) {
     case "move": {
-      const dist = hexDistance({ q: unit.q, r: unit.r }, { q: action.q, r: action.r });
+      const dist = hexDistance({ q: unit.q, r: unit.r }, {
+        q: action.q,
+        r: action.r,
+      });
       if (dist === 0) {
         return { newState: state, logMessage: "", error: "INVALID_MOVE" };
       }
@@ -231,7 +244,8 @@ export function applyAction(
         return { newState: state, logMessage: "", error: "OUT_OF_BOUNDS" };
       }
       const occupied = newState.units.some(
-        (o) => o.id !== unit.id && o.hp > 0 && o.q === action.q && o.r === action.r,
+        (o) =>
+          o.id !== unit.id && o.hp > 0 && o.q === action.q && o.r === action.r,
       );
       if (occupied) {
         return { newState: state, logMessage: "", error: "CELL_OCCUPIED" };
@@ -265,7 +279,10 @@ export function applyAction(
       if (target.hp <= 0) {
         return { newState: state, logMessage: "", error: "TARGET_IS_DEAD" };
       }
-      const dist = hexDistance({ q: unit.q, r: unit.r }, { q: target.q, r: target.r });
+      const dist = hexDistance({ q: unit.q, r: unit.r }, {
+        q: target.q,
+        r: target.r,
+      });
       if (dist > unit.Range) {
         return {
           newState: state,
@@ -305,7 +322,9 @@ export function applyAction(
         return {
           newState,
           logMessage:
-            `${unit.name} hit ${target.name} for ${unit.Damage} damage. (HP:${Math.max(0, target.hp)})`,
+            `${unit.name} hit ${target.name} for ${unit.Damage} damage. (HP:${
+              Math.max(0, target.hp)
+            })`,
         };
       }
     }

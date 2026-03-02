@@ -5,14 +5,14 @@
  * and emits click events for unit placement.
  */
 import * as Phaser from "phaser";
-import { hexToPixel, hexDimensions } from "../lib/hex-pixels.ts";
+import { hexDimensions, hexToPixel } from "../lib/hex-pixels.ts";
 import type { HexCoord } from "../lib/types.ts";
 import { UNIT_EMOJIS, UNIT_TYPES } from "../lib/types.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const HEX_SIZE = 32; // circumradius
-const PAD = 40;       // canvas padding
+const PAD = 40; // canvas padding
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -20,11 +20,13 @@ const PAD = 40;       // canvas padding
 function hexPoints(cx: number, cy: number, size: number): Phaser.Geom.Point[] {
   const pts: Phaser.Geom.Point[] = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i);          // flat-top: starts at 0°
-    pts.push(new Phaser.Geom.Point(
-      cx + size * Math.cos(angle),
-      cy + size * Math.sin(angle),
-    ));
+    const angle = (Math.PI / 180) * (60 * i); // flat-top: starts at 0°
+    pts.push(
+      new Phaser.Geom.Point(
+        cx + size * Math.cos(angle),
+        cy + size * Math.sin(angle),
+      ),
+    );
   }
   return pts;
 }
@@ -82,15 +84,21 @@ export default class SpawnScene extends Phaser.Scene {
     });
 
     // React to external state changes pushed through the registry
-    this.registry.events.on("changedata-spawnCells", (_: unknown, cells: HexCoord[]) => {
-      this.placedCells = cells;
-      this.drawMarkers();
-    });
-    this.registry.events.on("changedata-mapSize", (_: unknown, size: { cols: number; rows: number }) => {
-      this.cols = size.cols;
-      this.rows = size.rows;
-      this.resizeAndRedraw();
-    });
+    this.registry.events.on(
+      "changedata-spawnCells",
+      (_: unknown, cells: HexCoord[]) => {
+        this.placedCells = cells;
+        this.drawMarkers();
+      },
+    );
+    this.registry.events.on(
+      "changedata-mapSize",
+      (_: unknown, size: { cols: number; rows: number }) => {
+        this.cols = size.cols;
+        this.rows = size.rows;
+        this.resizeAndRedraw();
+      },
+    );
 
     // Initialise from registry if already set
     const initCells = this.registry.get("spawnCells") as HexCoord[] | undefined;
@@ -212,7 +220,9 @@ export default class SpawnScene extends Phaser.Scene {
 
     // Must be in spawn zone
     const half = Math.floor(this.cols / 2);
-    const inZone = this.playerNum === 1 ? bestQ < half : bestQ >= this.cols - half;
+    const inZone = this.playerNum === 1
+      ? bestQ < half
+      : bestQ >= this.cols - half;
     if (!inZone) return;
 
     // Emit event — the island decides whether to add/remove the cell

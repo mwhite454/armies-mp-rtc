@@ -3,7 +3,9 @@ import { getKv } from "./kv.ts";
 import type { UserRecord } from "./types.ts";
 
 export const googleOAuthConfig = createGoogleOAuthConfig({
-  redirectUri: `${Deno.env.get("BASE_URL") ?? "http://localhost:8000"}/auth/callback`,
+  redirectUri: `${
+    Deno.env.get("BASE_URL") ?? "http://localhost:8000"
+  }/auth/callback`,
   scope: "openid email profile",
 });
 
@@ -15,9 +17,15 @@ export async function getSessionUser(
   if (!sessionId) return null;
 
   const kv = await getKv();
-  const sessionEntry = await kv.get<{ userId: string }>(["sessions", sessionId]);
+  const sessionEntry = await kv.get<{ userId: string }>([
+    "sessions",
+    sessionId,
+  ]);
   if (!sessionEntry.value) return null;
 
-  const userEntry = await kv.get<UserRecord>(["users", sessionEntry.value.userId]);
+  const userEntry = await kv.get<UserRecord>([
+    "users",
+    sessionEntry.value.userId,
+  ]);
   return userEntry.value ?? null;
 }

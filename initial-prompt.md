@@ -1,15 +1,33 @@
-One shot end goal: browser deployable local network turn based multi player tactical game using your choice of browser friendly tech stack. Game rules are as follows: 
+One shot end goal: browser deployable local network turn based multi player
+tactical game using your choice of browser friendly tech stack. Game rules are
+as follows:
+
 - each game initiates with a peer to peer connection in browser
-- each player begins game with a set of 40 statistic points that they will spend to generate 4 units
+- each player begins game with a set of 40 statistic points that they will spend
+  to generate 4 units
 - 4 units are default named Leader, Heavy, Sniper, Dasher
-- each unit has a Move, Health, Damage, and Range stat. For all units Damage is how much damage they do to an opponent on attack, except the Leader, whose attack is actually a Heal, and can only target units for the same player
-- after finalizing “purchase” of stats the players select a map size and spawn point for their team. Next begins the combat phase
-- players now take turns, they may apply any two actions to a given unit: 1. Move (unit can move in a radius of their given location == to their Move Stat). 2. Reload - except for the initial turn where player units enter the game with loaded weapons, they must use an action to reload going forward. 3. Fire - a unit may target and fire - the target must be within the Range stat of their attacking unit to be hit. Each hit deducts the attacking units Damage stat from the Target units Health. 
-- if a unit health is equal to or less than 0 the player may no longer use the unit.
--if a unit health is equal to or less than 0 Leader can no longer heal them
-- a player loses when their leader health reaches 0, regardless of health or status of other three units. 
+- each unit has a Move, Health, Damage, and Range stat. For all units Damage is
+  how much damage they do to an opponent on attack, except the Leader, whose
+  attack is actually a Heal, and can only target units for the same player
+- after finalizing “purchase” of stats the players select a map size and spawn
+  point for their team. Next begins the combat phase
+- players now take turns, they may apply any two actions to a given unit: 1.
+  Move (unit can move in a radius of their given location == to their Move
+  Stat). 2. Reload - except for the initial turn where player units enter the
+  game with loaded weapons, they must use an action to reload going forward. 3.
+  Fire - a unit may target and fire - the target must be within the Range stat
+  of their attacking unit to be hit. Each hit deducts the attacking units Damage
+  stat from the Target units Health.
+- if a unit health is equal to or less than 0 the player may no longer use the
+  unit. -if a unit health is equal to or less than 0 Leader can no longer heal
+  them
+- a player loses when their leader health reaches 0, regardless of health or
+  status of other three units.
 - game state should signal a win to players and offer to start a new round
-- when starting a new round users can preserve their configuration from prior battle or start economy phase again
-- no single unit may have greater than 75 percent of stat economy assigned to them
+- when starting a new round users can preserve their configuration from prior
+  battle or start economy phase again
+- no single unit may have greater than 75 percent of stat economy assigned to
+  them
 - no unit may have any stat less than one at start if combat phase
-- graphics can be handled with simple canvas shapes or even emoji for now - more interested in mechanics than graphics at the moment
+- graphics can be handled with simple canvas shapes or even emoji for now - more
+  interested in mechanics than graphics at the moment

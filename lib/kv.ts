@@ -16,7 +16,9 @@ export async function getUser(userId: string): Promise<UserRecord | null> {
 }
 
 export async function upsertUser(
-  user: Omit<UserRecord, "wins" | "losses" | "elo" | "createdAt"> & Partial<Pick<UserRecord, "wins" | "losses" | "elo" | "createdAt">>,
+  user:
+    & Omit<UserRecord, "wins" | "losses" | "elo" | "createdAt">
+    & Partial<Pick<UserRecord, "wins" | "losses" | "elo" | "createdAt">>,
 ): Promise<UserRecord> {
   const kv = await getKv();
   const existing = await getUser(user.id);
