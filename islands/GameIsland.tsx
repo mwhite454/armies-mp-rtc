@@ -10,6 +10,7 @@ import type {
 } from "../lib/types.ts";
 import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
+import { hexToPixel, pixelToHex, gridPixelSize } from "../lib/hex-pixels.ts";
 import type * as Phaser from "phaser";
 
 interface GameIslandProps {
@@ -43,11 +44,13 @@ export default function GameIsland(
   const buildError = useSignal("");
 
   // ── Spawn ─────────────────────────────────────────────────────────────────
-  const mapSize = useSignal<8 | 12 | 16>(12);
-  const mapSizeFromHost = useSignal<8 | 12 | 16 | null>(null);
-  const spawnPlacements = useSignal<Array<{ x: number; y: number } | null>>([null, null, null, null]);
+  const mapCols = useSignal(12);
+  const mapRows = useSignal(12);
+  const mapColsFromHost = useSignal<number | null>(null);
+  const spawnCanvasRef = useRef<HTMLCanvasElement>(null);
+  const spawnPlacements = useSignal<Array<HexCoord | null>>([null, null, null, null]);
   const draggingUnit = useSignal<number | null>(null);
-  const hoverCell = useSignal<{ x: number; y: number } | null>(null);
+  const hoverCell = useSignal<HexCoord | null>(null);
   const spawnConfirmed = useSignal(false);
   const opponentSpawnReady = useSignal(false);
   const spawnError = useSignal("");
@@ -57,6 +60,7 @@ export default function GameIsland(
   const selectedUnitId = useSignal<string | null>(null);
   const currentAction = useSignal<"move" | "reload" | "fire" | null>(null);
   const isMyTurn = useSignal(false);
+  const phaserRootRef = useRef<HTMLDivElement>(null);
 
   // ── Turn timer ────────────────────────────────────────────────────────────
   const turnDeadline = useSignal<number | null>(null);
@@ -282,25 +286,20 @@ export default function GameIsland(
   useEffect(() => {
     if (phase.value !== "spawn") return;
     renderSpawn();
-  }, [phase.value, spawnPlacements.value, hoverCell.value, draggingUnit.value, mapSize.value]);
-
-  // ── Game canvas rendering ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase.value !== "combat" && phase.value !== "result") return;
-    renderGame();
-  }, [gameState.value, selectedUnitId.value, currentAction.value]);
+  }, [phase.value, spawnPlacements.value, hoverCell.value, draggingUnit.value, mapCols.value, mapRows.value]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Canvas functions (ported from tactical-game.html)
+  // Spawn canvas helpers
   // ─────────────────────────────────────────────────────────────────────────
 
-  function getCellSize(size: number) {
-    return Math.min(48, Math.floor(520 / size));
+  function isInSpawnZone(q: number, _r: number) {
+    const half = Math.floor(mapCols.value / 2);
+    return playerNum === 1 ? q < half : q >= mapCols.value - half;
   }
 
-  function isInSpawnZone(x: number, y: number) {
-    const half = Math.floor(mapSize.value / 2);
-    return playerNum === 1 ? x < half : x >= mapSize.value - half;
+  function getHexSize(cols: number, rows: number): number {
+    const { width: fw, height: fh } = gridPixelSize(cols, rows, 1);
+    return Math.max(12, Math.floor(Math.min(520 / fw, 520 / fh)));
   }
 
   const UNIT_DEFS = [
@@ -310,66 +309,102 @@ export default function GameIsland(
     { name: "Dasher", emoji: "⚡", color: "#22c55e" },
   ] as const;
 
+  function drawHex(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    size: number,
+    fill: string,
+    stroke: string,
+    lineWidth = 1,
+  ) {
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const angle = (Math.PI / 3) * k;
+      const vx = cx + size * Math.cos(angle);
+      const vy = cy + size * Math.sin(angle);
+      if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
   function renderSpawn() {
-    const canvas = gameCanvasRef.current;
+    const canvas = spawnCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const sz = mapSize.value;
-    const cs = getCellSize(sz);
-    canvas.width = sz * cs;
-    canvas.height = sz * cs;
-    const half = Math.floor(sz / 2);
+    const cols = mapCols.value;
+    const rows = mapRows.value;
+    const hexSize = getHexSize(cols, rows);
+    const { width, height } = gridPixelSize(cols, rows, hexSize);
+    canvas.width = width;
+    canvas.height = height;
 
-    for (let y = 0; y < sz; y++) {
-      for (let x = 0; x < sz; x++) {
-        // Base checkerboard (same as combat)
-        ctx.fillStyle = (x + y) % 2 === 0 ? "#0a0a1a" : "#0f0f22";
-        ctx.fillRect(x * cs, y * cs, cs, cs);
+    // Background
+    ctx.fillStyle = "#0a0a1a";
+    ctx.fillRect(0, 0, width, height);
 
-        // Spawn zone overlay / non-spawn dimming
-        if (isInSpawnZone(x, y)) {
-          ctx.fillStyle = "rgba(127,127,213,0.15)";
-          ctx.fillRect(x * cs, y * cs, cs, cs);
+    const half = Math.floor(cols / 2);
+    const hover = hoverCell.value;
+
+    for (let q = 0; q < cols; q++) {
+      for (let r = 0; r < rows; r++) {
+        const { px, py } = hexToPixel(q, r, hexSize);
+        const cx = px + hexSize;
+        const cy = py + hexSize;
+        const inZone = isInSpawnZone(q, r);
+        const isHover = draggingUnit.value !== null && hover?.q === q && hover?.r === r;
+
+        const base = (q + r) % 2 === 0 ? "#0a0a1a" : "#0f0f22";
+        const overlay = isHover && inZone  ? "rgba(127,127,213,0.6)"
+          : isHover && !inZone            ? "rgba(239,68,68,0.4)"
+          : inZone                        ? "rgba(127,127,213,0.18)"
+          :                                 "rgba(0,0,0,0.40)";
+
+        // Draw base then overlay in two passes
+        drawHex(ctx, cx, cy, hexSize - 1, base, "#1a1a3e");
+        if (overlay !== "rgba(0,0,0,0.40)") {
+          ctx.globalAlpha = 1;
+          drawHex(ctx, cx, cy, hexSize - 1, overlay, "transparent");
         } else {
-          ctx.fillStyle = "rgba(0,0,0,0.35)";
-          ctx.fillRect(x * cs, y * cs, cs, cs);
+          ctx.globalAlpha = 0.4;
+          drawHex(ctx, cx, cy, hexSize - 1, "#000", "transparent");
+          ctx.globalAlpha = 1;
         }
-
-        // Hover highlight during drag
-        const hover = hoverCell.value;
-        if (draggingUnit.value !== null && hover && hover.x === x && hover.y === y) {
-          ctx.fillStyle = isInSpawnZone(x, y)
-            ? "rgba(127,127,213,0.5)"
-            : "rgba(239,68,68,0.3)";
-          ctx.fillRect(x * cs, y * cs, cs, cs);
-        }
-
-        ctx.strokeStyle = "#1a1a3e";
-        ctx.strokeRect(x * cs, y * cs, cs, cs);
       }
     }
 
-    // Zone divider line
-    const zoneX = half * cs;
+    // Zone divider (dashed vertical line between zones)
+    const xA = hexToPixel(half - 1, 0, hexSize).px + hexSize + hexSize * Math.cos(0);
+    const xB = hexToPixel(half, 0, hexSize).px + hexSize - hexSize;
+    const divX = (xA + xB) / 2;
     ctx.strokeStyle = "#7f7fd5";
     ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    ctx.moveTo(zoneX, 0);
-    ctx.lineTo(zoneX, sz * cs);
+    ctx.moveTo(divX, 0);
+    ctx.lineTo(divX, height);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.lineWidth = 1;
 
     // Placed units (combat-style circles)
     spawnPlacements.value.forEach((placement, i) => {
       if (!placement) return;
-      const { x, y } = placement;
+      const { px, py } = hexToPixel(placement.q, placement.r, hexSize);
+      const cx = px + hexSize;
+      const cy = py + hexSize;
       const def = UNIT_DEFS[i];
-      const cx = x * cs + cs / 2;
-      const cy = y * cs + cs / 2;
+      const r = hexSize * 0.48;
 
       ctx.beginPath();
-      ctx.arc(cx, cy, cs * 0.38, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fillStyle = "#1a2a5e";
       ctx.fill();
       ctx.strokeStyle = def.color;
@@ -377,23 +412,25 @@ export default function GameIsland(
       ctx.stroke();
       ctx.lineWidth = 1;
 
-      ctx.font = `${cs * 0.45}px serif`;
+      ctx.font = `${hexSize * 0.5}px serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(def.emoji, cx, cy);
     });
   }
 
-  function getCellFromEvent(e: MouseEvent | DragEvent): { x: number; y: number } | null {
-    const canvas = gameCanvasRef.current;
+  function getCellFromEvent(e: MouseEvent | DragEvent): HexCoord | null {
+    const canvas = spawnCanvasRef.current;
     if (!canvas) return null;
-    const sz = mapSize.value;
     const rect = canvas.getBoundingClientRect();
-    const cs = rect.width / sz;
-    const x = Math.floor((e.clientX - rect.left) / cs);
-    const y = Math.floor((e.clientY - rect.top) / cs);
-    if (x < 0 || x >= sz || y < 0 || y >= sz) return null;
-    return { x, y };
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const hexSize = getHexSize(mapCols.value, mapRows.value);
+    const px = (e.clientX - rect.left) * scaleX - hexSize;
+    const py = (e.clientY - rect.top) * scaleY - hexSize;
+    const { q, r } = pixelToHex(px, py, hexSize);
+    if (q < 0 || q >= mapCols.value || r < 0 || r >= mapRows.value) return null;
+    return { q, r };
   }
 
   function onCanvasDragOver(e: DragEvent) {
@@ -410,14 +447,14 @@ export default function GameIsland(
     const cell = getCellFromEvent(e);
     const unitIdx = draggingUnit.value;
     if (cell === null || unitIdx === null) return;
-    if (!isInSpawnZone(cell.x, cell.y)) {
+    if (!isInSpawnZone(cell.q, cell.r)) {
       spawnError.value = "Must place in your spawn zone.";
       draggingUnit.value = null;
       hoverCell.value = null;
       return;
     }
     const occupied = spawnPlacements.value.some(
-      (p, i) => i !== unitIdx && p?.x === cell.x && p?.y === cell.y,
+      (p, i) => i !== unitIdx && p?.q === cell.q && p?.r === cell.r,
     );
     if (occupied) {
       spawnError.value = "That cell is already occupied.";
@@ -438,7 +475,7 @@ export default function GameIsland(
     const cell = getCellFromEvent(e);
     if (!cell) return;
     const idx = spawnPlacements.value.findIndex(
-      (p) => p?.x === cell.x && p?.y === cell.y,
+      (p) => p?.q === cell.q && p?.r === cell.r,
     );
     if (idx >= 0) {
       const next = [...spawnPlacements.value];
@@ -447,130 +484,6 @@ export default function GameIsland(
     }
   }
 
-  function renderGame() {
-    const canvas = gameCanvasRef.current;
-    const state = gameState.value;
-    if (!canvas || !state) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const sz = state.mapSize;
-    const cs = getCellSize(sz);
-    canvas.width = sz * cs;
-    canvas.height = sz * cs;
-
-    // Grid
-    for (let y = 0; y < sz; y++) {
-      for (let x = 0; x < sz; x++) {
-        ctx.fillStyle = (x + y) % 2 === 0 ? "#0a0a1a" : "#0f0f22";
-        ctx.fillRect(x * cs, y * cs, cs, cs);
-        ctx.strokeStyle = "#1a1a3e";
-        ctx.strokeRect(x * cs, y * cs, cs, cs);
-      }
-    }
-
-    const selUnit = state.units.find((u) => u.id === selectedUnitId.value);
-
-    // Move range overlay
-    if (selUnit && currentAction.value === "move") {
-      for (let dy = -selUnit.Move; dy <= selUnit.Move; dy++) {
-        for (let dx = -selUnit.Move; dx <= selUnit.Move; dx++) {
-          const dist = Math.abs(dx) + Math.abs(dy);
-          if (dist > 0 && dist <= selUnit.Move) {
-            const nx = selUnit.x + dx, ny = selUnit.y + dy;
-            if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
-              ctx.fillStyle = "rgba(127,127,213,.25)";
-              ctx.fillRect(nx * cs, ny * cs, cs, cs);
-            }
-          }
-        }
-      }
-    }
-
-    // Fire range overlay
-    if (selUnit && currentAction.value === "fire") {
-      for (let dy = -selUnit.Range; dy <= selUnit.Range; dy++) {
-        for (let dx = -selUnit.Range; dx <= selUnit.Range; dx++) {
-          if (Math.abs(dx) + Math.abs(dy) <= selUnit.Range) {
-            const nx = selUnit.x + dx, ny = selUnit.y + dy;
-            if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
-              ctx.fillStyle = "rgba(249,115,22,.2)";
-              ctx.fillRect(nx * cs, ny * cs, cs, cs);
-            }
-          }
-        }
-      }
-    }
-
-    // Units
-    state.units.forEach((u) => {
-      const x = u.x * cs, y = u.y * cs;
-      if (u.hp <= 0) ctx.globalAlpha = 0.25;
-
-      ctx.beginPath();
-      ctx.arc(x + cs / 2, y + cs / 2, cs * 0.38, 0, Math.PI * 2);
-      ctx.fillStyle = u.player === playerNum ? "#1a2a5e" : "#3a1a1a";
-      ctx.fill();
-      ctx.strokeStyle = u.color;
-      ctx.lineWidth = u.id === selectedUnitId.value ? 3 : 1.5;
-      ctx.stroke();
-      ctx.lineWidth = 1;
-
-      ctx.font = `${cs * 0.45}px serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(u.emoji, x + cs / 2, y + cs / 2);
-
-      if (u.hp > 0) {
-        const barW = cs - 6, barH = 4;
-        const bx = x + 3, by = y + cs - 7;
-        ctx.fillStyle = "#333";
-        ctx.fillRect(bx, by, barW, barH);
-        const pct = Math.max(0, u.hp / u.maxHp);
-        ctx.fillStyle = pct > 0.5 ? "#86efac" : pct > 0.25 ? "#fbbf24" : "#f87171";
-        ctx.fillRect(bx, by, barW * pct, barH);
-      }
-
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.arc(x + cs - 6, y + 6, 3, 0, Math.PI * 2);
-      ctx.fillStyle = u.player === 1 ? "#7f7fd5" : "#f97316";
-      ctx.fill();
-    });
-  }
-
-  function onGameCanvasClick(e: MouseEvent) {
-    const state = gameState.value;
-    if (!state || !isMyTurn.value || !selectedUnitId.value || !currentAction.value) return;
-    const canvas = gameCanvasRef.current;
-    if (!canvas) return;
-    const cs = getCellSize(state.mapSize);
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / cs);
-    const y = Math.floor((e.clientY - rect.top) / cs);
-
-    const unit = state.units.find((u) => u.id === selectedUnitId.value);
-    if (!unit) return;
-
-    let action: GameAction | null = null;
-
-    if (currentAction.value === "move") {
-      action = { type: "move", unitId: unit.id, x, y };
-    } else if (currentAction.value === "fire") {
-      const target = state.units.find(
-        (t) => t.x === x && t.y === y && t.hp > 0,
-      );
-      if (!target) {
-        addLog("No target at that cell.", "sys");
-        return;
-      }
-      action = { type: "fire", unitId: unit.id, targetId: target.id };
-    }
-
-    if (action) {
-      send({ type: "action", action });
-    }
-  }
 
   function doReload() {
     if (!isMyTurn.value || !selectedUnitId.value) return;
@@ -625,7 +538,7 @@ export default function GameIsland(
       return;
     }
     spawnConfirmed.value = true;
-    send({ type: "spawn_ready", spawn: placements as { x: number; y: number }[] });
+    send({ type: "spawn_ready", spawn: placements as HexCoord[] });
     addLog("Your spawn confirmed.", "sys");
   }
 
@@ -845,8 +758,9 @@ export default function GameIsland(
                 disabled={spawnConfirmed.value}
                 onClick={() => {
                   spawnPlacements.value = [null, null, null, null];
-                  mapSize.value = s;
-                  send({ type: "map_size", size: s });
+                  mapCols.value = s;
+                  mapRows.value = s;
+                  send({ type: "map_size", mapCols: s, mapRows: s });
                 }}
               >
                 {s}×{s}
@@ -901,7 +815,7 @@ export default function GameIsland(
         </p>
 
         <canvas
-          ref={gameCanvasRef}
+          ref={spawnCanvasRef}
           style="cursor:crosshair;border-radius:4px;max-width:100%"
           onDragOver={onCanvasDragOver}
           onDragLeave={onCanvasDragLeave}
