@@ -2,8 +2,55 @@
  * Pure server-side game logic — no DOM dependencies.
  * Ported from src/tactical-game.html.
  */
-import type { GameAction, GameState, Unit, UnitBuild } from "./types.ts";
+import type { GameAction, GameState, HexCoord, Unit, UnitBuild } from "./types.ts";
 import { UNIT_COLORS, UNIT_EMOJIS, UNIT_TYPES } from "./types.ts";
+
+// ─── Hex Math (flat-top axial) ─────────────────────────────────────────────────────
+
+/** Axial hex distance between two flat-top hexes. */
+export function hexDistance(a: HexCoord, b: HexCoord): number {
+  const dq = a.q - b.q;
+  const dr = a.r - b.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
+/** Six flat-top axial neighbor offsets. */
+export const HEX_NEIGHBORS: HexCoord[] = [
+  { q: 1, r: 0 },
+  { q: -1, r: 0 },
+  { q: 0, r: 1 },
+  { q: 0, r: -1 },
+  { q: 1, r: -1 },
+  { q: -1, r: 1 },
+];
+
+/** All hex coords reachable within `range` steps (BFS, ignoring unit collisions). */
+export function hexReachable(
+  origin: HexCoord,
+  range: number,
+  mapCols: number,
+  mapRows: number,
+): HexCoord[] {
+  const visited = new Set<string>();
+  const result: HexCoord[] = [];
+  const queue: HexCoord[] = [origin];
+  visited.add(`${origin.q},${origin.r}`);
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const nb of HEX_NEIGHBORS) {
+      const nq = cur.q + nb.q;
+      const nr = cur.r + nb.r;
+      const key = `${nq},${nr}`;
+      if (visited.has(key)) continue;
+      if (nq < 0 || nq >= mapCols || nr < 0 || nr >= mapRows) continue;
+      if (hexDistance(origin, { q: nq, r: nr }) > range) continue;
+      visited.add(key);
+      result.push({ q: nq, r: nr });
+      queue.push({ q: nq, r: nr });
+    }
+  }
+  return result;
+}
 
 export const TOTAL_POINTS = 40;
 export const MAX_PER_UNIT = 30;
@@ -49,7 +96,7 @@ export function getDefaultBuild(): UnitBuild[] {
 
 export function buildUnitsFromSpawn(
   playerNum: 1 | 2,
-  spawnCells: { x: number; y: number }[],
+  spawnCells: HexCoord[],
   build: UnitBuild[],
 ): Unit[] {
   return UNIT_TYPES.map((name, i) => ({
@@ -64,8 +111,8 @@ export function buildUnitsFromSpawn(
     Range: build[i].Range,
     hp: build[i].Health,
     maxHp: build[i].Health,
-    x: spawnCells[i].x,
-    y: spawnCells[i].y,
+    q: spawnCells[i].q,
+    r: spawnCells[i].r,
     loaded: true,
   }));
 }
@@ -73,18 +120,19 @@ export function buildUnitsFromSpawn(
 // ─── Spawn Validation ─────────────────────────────────────────────────────────
 
 export function isInSpawnZone(
-  x: number,
-  y: number,
-  mapSize: number,
+  q: number,
+  _r: number,
+  mapCols: number,
   playerNum: 1 | 2,
 ): boolean {
-  const half = Math.floor(mapSize / 2);
-  return playerNum === 1 ? x < half : x >= mapSize - half;
+  const half = Math.floor(mapCols / 2);
+  return playerNum === 1 ? q < half : q >= mapCols - half;
 }
 
 export function validateSpawn(
-  cells: { x: number; y: number }[],
-  mapSize: number,
+  cells: HexCoord[],
+  mapCols: number,
+  mapRows: number,
   playerNum: 1 | 2,
 ): string[] {
   const errors: string[] = [];
@@ -94,19 +142,15 @@ export function validateSpawn(
 
   const seen = new Set<string>();
   cells.forEach((cell) => {
-    const key = `${cell.x},${cell.y}`;
-    if (seen.has(key)) errors.push(`Duplicate cell (${cell.x},${cell.y}).`);
+    const key = `${cell.q},${cell.r}`;
+    if (seen.has(key)) errors.push(`Duplicate cell (${cell.q},${cell.r}).`);
     else seen.add(key);
 
-    if (!isInSpawnZone(cell.x, cell.y, mapSize, playerNum)) {
-      errors.push(
-        `Cell (${cell.x},${cell.y}) is outside your spawn zone.`,
-      );
+    if (!isInSpawnZone(cell.q, cell.r, mapCols, playerNum)) {
+      errors.push(`Cell (${cell.q},${cell.r}) is outside your spawn zone.`);
     }
-    if (
-      cell.x < 0 || cell.x >= mapSize || cell.y < 0 || cell.y >= mapSize
-    ) {
-      errors.push(`Cell (${cell.x},${cell.y}) is out of bounds.`);
+    if (cell.q < 0 || cell.q >= mapCols || cell.r < 0 || cell.r >= mapRows) {
+      errors.push(`Cell (${cell.q},${cell.r}) is out of bounds.`);
     }
   });
 
@@ -169,7 +213,7 @@ export function applyAction(
 
   switch (action.type) {
     case "move": {
-      const dist = Math.abs(action.x - unit.x) + Math.abs(action.y - unit.y);
+      const dist = hexDistance({ q: unit.q, r: unit.r }, { q: action.q, r: action.r });
       if (dist === 0) {
         return { newState: state, logMessage: "", error: "INVALID_MOVE" };
       }
@@ -180,21 +224,24 @@ export function applyAction(
           error: `OUT_OF_RANGE: max ${unit.Move}`,
         };
       }
-      if (action.x < 0 || action.x >= newState.mapSize || action.y < 0 || action.y >= newState.mapSize) {
+      if (
+        action.q < 0 || action.q >= newState.mapCols ||
+        action.r < 0 || action.r >= newState.mapRows
+      ) {
         return { newState: state, logMessage: "", error: "OUT_OF_BOUNDS" };
       }
       const occupied = newState.units.some(
-        (o) => o.id !== unit.id && o.hp > 0 && o.x === action.x && o.y === action.y,
+        (o) => o.id !== unit.id && o.hp > 0 && o.q === action.q && o.r === action.r,
       );
       if (occupied) {
         return { newState: state, logMessage: "", error: "CELL_OCCUPIED" };
       }
-      unit.x = action.x;
-      unit.y = action.y;
+      unit.q = action.q;
+      unit.r = action.r;
       newState.actionsLeft--;
       return {
         newState,
-        logMessage: `${unit.name} moved to (${unit.x},${unit.y}).`,
+        logMessage: `${unit.name} moved to (${unit.q},${unit.r}).`,
       };
     }
 
@@ -218,7 +265,7 @@ export function applyAction(
       if (target.hp <= 0) {
         return { newState: state, logMessage: "", error: "TARGET_IS_DEAD" };
       }
-      const dist = Math.abs(target.x - unit.x) + Math.abs(target.y - unit.y);
+      const dist = hexDistance({ q: unit.q, r: unit.r }, { q: target.q, r: target.r });
       if (dist > unit.Range) {
         return {
           newState: state,

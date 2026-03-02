@@ -49,6 +49,7 @@
     "npm:esbuild-wasm@~0.25.11": "0.25.12",
     "npm:esbuild@0.25.7": "0.25.7",
     "npm:esbuild@~0.25.5": "0.25.12",
+    "npm:phaser@^3.90.0": "3.90.0",
     "npm:preact-render-to-string@^6.6.3": "6.6.6_preact@10.28.4",
     "npm:preact@^10.27.0": "10.28.4",
     "npm:preact@^10.27.2": "10.28.4",
@@ -1253,6 +1254,9 @@
     "estree-walker@2.0.2": {
       "integrity": "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="
     },
+    "eventemitter3@5.0.4": {
+      "integrity": "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw=="
+    },
     "fdir@6.5.0_picomatch@4.0.3": {
       "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==",
       "dependencies": [
@@ -1384,6 +1388,12 @@
     "node-releases@2.0.27": {
       "integrity": "sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA=="
     },
+    "phaser@3.90.0": {
+      "integrity": "sha512-/cziz/5ZIn02uDkC9RzN8VF9x3Gs3XdFFf9nkiMEQT3p7hQlWuyjy4QWosU802qqno2YSLn2BfqwOKLv/sSVfQ==",
+      "dependencies": [
+        "eventemitter3"
+      ]
+    },
     "picocolors@1.1.1": {
       "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="
     },
@@ -1501,6 +1511,7 @@
       "npm:@preact/signals@^2.5.0",
       "npm:@tailwindcss/vite@^4.2.1",
       "npm:daisyui@^5.5.19",
+      "npm:phaser@^3.90.0",
       "npm:preact@^10.27.2",
       "npm:tailwindcss@^4.2.1",
       "npm:vite@^7.1.3"

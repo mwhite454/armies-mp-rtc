@@ -3,12 +3,14 @@ import { useEffect, useRef } from "preact/hooks";
 import type {
   GameAction,
   GameState,
+  HexCoord,
   RoomStatus,
   ServerMessage,
   UnitBuild,
 } from "../lib/types.ts";
 import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
+import type * as Phaser from "phaser";
 
 interface GameIslandProps {
   roomCode: string;
@@ -55,9 +57,11 @@ export default function GameIsland(
   const selectedUnitId = useSignal<string | null>(null);
   const currentAction = useSignal<"move" | "reload" | "fire" | null>(null);
   const isMyTurn = useSignal(false);
-  const gameCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Result ────────────────────────────────────────────────────────────────
+  // ── Turn timer ────────────────────────────────────────────────────────────
+  const turnDeadline = useSignal<number | null>(null);
+  const turnDurationMs = useSignal<number>(60_000);
+  const timedOut = useSignal(false);
   const gameOver = useSignal<{ winnerPlayerNum: 1 | 2; winnerId: string } | null>(null);
   const newRoundVoted = useSignal(false);
 
@@ -138,7 +142,8 @@ export default function GameIsland(
         opponentName.value = msg.opponentName;
         if (msg.opponentName) opponentJoined.value = true;
         if (msg.roomStatus !== "lobby") phase.value = msg.roomStatus;
-        mapSize.value = msg.mapSize;
+        mapCols.value = msg.mapCols;
+        mapRows.value = msg.mapRows;
         break;
 
       case "player_joined":
@@ -169,8 +174,9 @@ export default function GameIsland(
         break;
 
       case "map_size":
-        mapSizeFromHost.value = msg.size;
-        mapSize.value = msg.size;
+        mapColsFromHost.value = msg.mapCols;
+        mapCols.value = msg.mapCols;
+        mapRows.value = msg.mapRows;
         break;
 
       case "opponent_spawn_ready":
@@ -211,10 +217,27 @@ export default function GameIsland(
         isMyTurn.value = msg.currentTurn === playerNum;
         selectedUnitId.value = null;
         currentAction.value = null;
+        timedOut.value = false;
         addLog(
           msg.currentTurn === playerNum
             ? "--- Your turn ---"
             : "--- Opponent's turn ---",
+          "sys",
+        );
+        break;
+
+      case "turn_timer_start":
+        turnDeadline.value = msg.deadline;
+        turnDurationMs.value = msg.turnDurationMs;
+        timedOut.value = false;
+        break;
+
+      case "turn_timeout":
+        timedOut.value = true;
+        addLog(
+          msg.playerNum === playerNum
+            ? "⏰ Your turn timed out."
+            : "⏰ Opponent timed out.",
           "sys",
         );
         break;
@@ -818,7 +841,7 @@ export default function GameIsland(
             {([8, 12, 16] as const).map((s) => (
               <button
                 key={s}
-                class={`btn btn-xs ${mapSize.value === s ? "btn-primary" : "btn-outline"}`}
+                class={`btn btn-xs ${mapCols.value === s ? "btn-primary" : "btn-outline"}`}
                 disabled={spawnConfirmed.value}
                 onClick={() => {
                   spawnPlacements.value = [null, null, null, null];
@@ -833,7 +856,7 @@ export default function GameIsland(
         )}
         {playerNum === 2 && (
           <p class="text-base-content/50 text-sm">
-            Map size: {mapSizeFromHost.value ?? "waiting for host..."}
+            Map size: {mapColsFromHost.value ? `${mapColsFromHost.value}×${mapRows.value}` : "waiting for host..."}
           </p>
         )}
 
@@ -932,14 +955,11 @@ export default function GameIsland(
       </div>
 
       <div class="flex gap-3 flex-wrap">
-        {/* Game canvas */}
-        <div>
-          <canvas
-            ref={gameCanvasRef}
-            style="border:2px solid #7f7fd5;border-radius:4px;cursor:crosshair"
-            onClick={onGameCanvasClick}
-          />
-        </div>
+        {/* Phaser game canvas */}
+        <div
+          ref={phaserRootRef}
+          style="border:2px solid #7f7fd5;border-radius:4px;overflow:hidden"
+        />
 
         {/* HUD */}
         <div class="flex flex-col gap-3 min-w-[200px] flex-1">

@@ -19,11 +19,51 @@ import {
   unregisterSocket,
 } from "../../../lib/room-manager.ts";
 import type {
+  ActiveRoom,
+} from "../../../lib/room-manager.ts";
+import type {
   ClientMessage,
   GameState,
   RoomRecord,
   UnitBuild,
 } from "../../../lib/types.ts";
+
+const TURN_TIMER_MS = 60_000;
+
+function startTurnTimer(
+  room: ActiveRoom,
+  kvRoom: RoomRecord,
+  currentTurn: 1 | 2,
+): void {
+  clearTurnTimer(room);
+  const deadline = Date.now() + TURN_TIMER_MS;
+  room.turnDeadline = deadline;
+  broadcastToAll(room, { type: "turn_timer_start", deadline, turnDurationMs: TURN_TIMER_MS });
+
+  room.turnTimerId = setTimeout(async () => {
+    if (room.phase !== "combat") return;
+    if (!room.gameState || room.gameState.turn !== currentTurn) return;
+
+    // Auto end-turn
+    const nextTurn = (currentTurn === 1 ? 2 : 1) as 1 | 2;
+    broadcastToAll(room, { type: "turn_timeout", playerNum: currentTurn });
+
+    room.gameState = { ...room.gameState, turn: nextTurn, actionsLeft: 2 };
+    kvRoom.gameState = room.gameState;
+    await saveRoom(kvRoom);
+
+    broadcastToAll(room, { type: "turn_change", currentTurn: nextTurn });
+    startTurnTimer(room, kvRoom, nextTurn);
+  }, TURN_TIMER_MS);
+}
+
+function clearTurnTimer(room: ActiveRoom): void {
+  if (room.turnTimerId !== null) {
+    clearTimeout(room.turnTimerId);
+    room.turnTimerId = null;
+  }
+  room.turnDeadline = null;
+}
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
@@ -66,6 +106,10 @@ export const handler = define.handlers({
     // Get or create in-memory room
     const room = getOrCreateRoom(code, kvRoom.hostUserId);
 
+    // Restore map dimensions from KV (handles reconnect after server restart)
+    room.mapCols = kvRoom.mapCols ?? 12;
+    room.mapRows = kvRoom.mapRows ?? 12;
+
     // Assign player number
     const playerNum = (kvRoom.playerSlots[user.id] ?? (isHost ? 1 : 2)) as
       | 1
@@ -105,7 +149,8 @@ export const handler = define.handlers({
         roomStatus: room.phase,
         opponentName,
         opponentAvatar,
-        mapSize: room.mapSize,
+        mapCols: room.mapCols,
+        mapRows: room.mapRows,
       });
 
       // Notify opponent that this player connected
@@ -132,6 +177,16 @@ export const handler = define.handlers({
           type: "game_start",
           state: room.gameState,
         });
+        if (room.turnDeadline !== null) {
+          const remainingMs = room.turnDeadline - Date.now();
+          if (remainingMs > 0) {
+            sendToUser(room, user.id, {
+              type: "turn_timer_start",
+              deadline: room.turnDeadline,
+              turnDurationMs: TURN_TIMER_MS,
+            });
+          }
+        }
       }
     };
 
@@ -176,15 +231,30 @@ export const handler = define.handlers({
 
         case "map_size": {
           if (playerNum !== 1) return; // only host sets map size
-          room.mapSize = msg.size;
-          kvRoom.mapSize = msg.size;
+          const MIN_DIM = 4;
+          const MAX_DIM = 32;
+          if (
+            !Number.isInteger(msg.mapCols) || msg.mapCols < MIN_DIM || msg.mapCols > MAX_DIM ||
+            !Number.isInteger(msg.mapRows) || msg.mapRows < MIN_DIM || msg.mapRows > MAX_DIM
+          ) {
+            sendToUser(room, user.id, {
+              type: "error",
+              code: "INVALID_MAP_SIZE",
+              message: `Map dimensions must be integers between ${MIN_DIM} and ${MAX_DIM}.`,
+            });
+            return;
+          }
+          room.mapCols = msg.mapCols;
+          room.mapRows = msg.mapRows;
+          kvRoom.mapCols = msg.mapCols;
+          kvRoom.mapRows = msg.mapRows;
           await saveRoom(kvRoom);
-          broadcast(room, { type: "map_size", size: msg.size }, user.id);
+          broadcast(room, { type: "map_size", mapCols: msg.mapCols, mapRows: msg.mapRows }, user.id);
           break;
         }
 
         case "spawn_ready": {
-          const errors = validateSpawn(msg.spawn, room.mapSize, playerNum);
+          const errors = validateSpawn(msg.spawn, room.mapCols, room.mapRows, playerNum);
           if (errors.length) {
             sendToUser(room, user.id, {
               type: "error",
@@ -261,6 +331,7 @@ export const handler = define.handlers({
             return;
           }
 
+          clearTurnTimer(room);
           const nextTurn = (room.gameState.turn === 1 ? 2 : 1) as 1 | 2;
           room.gameState = {
             ...room.gameState,
@@ -271,6 +342,7 @@ export const handler = define.handlers({
           await saveRoom(kvRoom);
 
           broadcastToAll(room, { type: "turn_change", currentTurn: nextTurn });
+          startTurnTimer(room, kvRoom, nextTurn);
           break;
         }
 
@@ -318,6 +390,9 @@ export const handler = define.handlers({
 
     socket.onclose = () => {
       unregisterSocket(room, user.id);
+      if (room.sockets.size === 0) {
+        clearTurnTimer(room);
+      }
     };
 
     return response;
@@ -340,7 +415,8 @@ async function buildAndStartGame(
   const p2Units = buildUnitsFromSpawn(2, p2Spawn, p2Build);
 
   const gameState: GameState = {
-    mapSize: room.mapSize,
+    mapCols: room.mapCols,
+    mapRows: room.mapRows,
     turn: 1,
     actionsLeft: 2,
     units: [...p1Units, ...p2Units],
@@ -355,6 +431,7 @@ async function buildAndStartGame(
   await saveRoom(kvRoom);
 
   broadcastToAll(room, { type: "game_start", state: gameState });
+  startTurnTimer(room, kvRoom, 1);
 }
 
 async function recordGameResult(
@@ -377,7 +454,8 @@ async function recordGameResult(
       gameId,
       opponent: loserId,
       result: "win",
-      mapSize: kvRoom.mapSize,
+      mapCols: kvRoom.mapCols,
+      mapRows: kvRoom.mapRows,
       rounds: kvRoom.round ?? 1,
       playedAt: Date.now(),
     }),
@@ -385,7 +463,8 @@ async function recordGameResult(
       gameId,
       opponent: winnerId,
       result: "loss",
-      mapSize: kvRoom.mapSize,
+      mapCols: kvRoom.mapCols,
+      mapRows: kvRoom.mapRows,
       rounds: kvRoom.round ?? 1,
       playedAt: Date.now(),
     }),
