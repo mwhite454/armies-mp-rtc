@@ -10,7 +10,7 @@ import type {
 } from "../lib/types.ts";
 import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
-import type Phaser from "phaser";
+import type * as Phaser from "phaser";
 
 interface GameIslandProps {
   roomCode: string;
@@ -295,7 +295,7 @@ export default function GameIsland(
     if (typeof window === "undefined") return;
     destroyPhaser();
 
-    const Phaser = (await import("phaser")).default;
+    const Phaser = await import("phaser");
 
     // Dynamic import of the scene class
     const SceneModule = sceneKey === "SpawnScene"
