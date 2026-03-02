@@ -6,8 +6,8 @@
  * Reacts to GameState changes pushed through `scene.registry`.
  */
 import * as Phaser from "phaser";
-import { hexToPixel, hexRange, hexDimensions } from "../../lib/hex-pixels.ts";
-import type { GameState, HexCoord, Unit } from "../../lib/types.ts";
+import { hexToPixel, hexRange, hexDimensions } from "../lib/hex-pixels.ts";
+import type { GameState, HexCoord, Unit } from "../lib/types.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 

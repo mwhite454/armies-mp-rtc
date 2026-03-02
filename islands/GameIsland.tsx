@@ -301,8 +301,8 @@ export default function GameIsland(
 
     // Dynamic import of the scene class
     const SceneModule = sceneKey === "SpawnScene"
-      ? await import("./phaser/SpawnScene.ts")
-      : await import("./phaser/CombatScene.ts");
+      ? await import("../phaser/SpawnScene.ts")
+      : await import("../phaser/CombatScene.ts");
     const SceneClass = SceneModule.default;
 
     const container = phaserRootRef.current;

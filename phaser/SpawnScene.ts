@@ -5,9 +5,9 @@
  * and emits click events for unit placement.
  */
 import * as Phaser from "phaser";
-import { hexToPixel, hexDimensions } from "../../lib/hex-pixels.ts";
-import type { HexCoord } from "../../lib/types.ts";
-import { UNIT_EMOJIS, UNIT_TYPES } from "../../lib/types.ts";
+import { hexToPixel, hexDimensions } from "../lib/hex-pixels.ts";
+import type { HexCoord } from "../lib/types.ts";
+import { UNIT_EMOJIS, UNIT_TYPES } from "../lib/types.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
