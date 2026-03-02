@@ -3,12 +3,14 @@ import { useEffect, useRef } from "preact/hooks";
 import type {
   GameAction,
   GameState,
+  HexCoord,
   RoomStatus,
   ServerMessage,
   UnitBuild,
 } from "../lib/types.ts";
 import { TOTAL_POINTS, MAX_PER_UNIT, getDefaultBuild, randomizeBuild } from "../lib/game-engine.ts";
 import { UNIT_TYPES } from "../lib/types.ts";
+import type * as Phaser from "phaser";
 
 interface GameIslandProps {
   roomCode: string;
@@ -41,22 +43,28 @@ export default function GameIsland(
   const buildError = useSignal("");
 
   // ── Spawn ─────────────────────────────────────────────────────────────────
-  const mapSize = useSignal<8 | 12 | 16>(12);
-  const mapSizeFromHost = useSignal<8 | 12 | 16 | null>(null);
-  const spawnCells = useSignal<{ x: number; y: number }[]>([]);
+  const mapCols = useSignal<number>(12);
+  const mapRows = useSignal<number>(12);
+  const mapColsFromHost = useSignal<number | null>(null);
+  const spawnCells = useSignal<{ q: number; r: number }[]>([]);
   const spawnConfirmed = useSignal(false);
   const opponentSpawnReady = useSignal(false);
   const spawnError = useSignal("");
-  const mapCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // ── Phaser refs ────────────────────────────────────────────────────────────
+  const phaserRootRef = useRef<HTMLDivElement>(null);
+  const phaserGameRef = useRef<Phaser.Game | null>(null);
 
   // ── Combat ────────────────────────────────────────────────────────────────
   const gameState = useSignal<GameState | null>(null);
   const selectedUnitId = useSignal<string | null>(null);
   const currentAction = useSignal<"move" | "reload" | "fire" | null>(null);
   const isMyTurn = useSignal(false);
-  const gameCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Result ────────────────────────────────────────────────────────────────
+  // ── Turn timer ────────────────────────────────────────────────────────────
+  const turnDeadline = useSignal<number | null>(null);
+  const turnDurationMs = useSignal<number>(60_000);
+  const timedOut = useSignal(false);
   const gameOver = useSignal<{ winnerPlayerNum: 1 | 2; winnerId: string } | null>(null);
   const newRoundVoted = useSignal(false);
 
@@ -137,7 +145,8 @@ export default function GameIsland(
         opponentName.value = msg.opponentName;
         if (msg.opponentName) opponentJoined.value = true;
         if (msg.roomStatus !== "lobby") phase.value = msg.roomStatus;
-        mapSize.value = msg.mapSize;
+        mapCols.value = msg.mapCols;
+        mapRows.value = msg.mapRows;
         break;
 
       case "player_joined":
@@ -166,8 +175,9 @@ export default function GameIsland(
         break;
 
       case "map_size":
-        mapSizeFromHost.value = msg.size;
-        mapSize.value = msg.size;
+        mapColsFromHost.value = msg.mapCols;
+        mapCols.value = msg.mapCols;
+        mapRows.value = msg.mapRows;
         break;
 
       case "opponent_spawn_ready":
@@ -208,10 +218,27 @@ export default function GameIsland(
         isMyTurn.value = msg.currentTurn === playerNum;
         selectedUnitId.value = null;
         currentAction.value = null;
+        timedOut.value = false;
         addLog(
           msg.currentTurn === playerNum
             ? "--- Your turn ---"
             : "--- Opponent's turn ---",
+          "sys",
+        );
+        break;
+
+      case "turn_timer_start":
+        turnDeadline.value = msg.deadline;
+        turnDurationMs.value = msg.turnDurationMs;
+        timedOut.value = false;
+        break;
+
+      case "turn_timeout":
+        timedOut.value = true;
+        addLog(
+          msg.playerNum === playerNum
+            ? "⏰ Your turn timed out."
+            : "⏰ Opponent timed out.",
           "sys",
         );
         break;
@@ -252,242 +279,190 @@ export default function GameIsland(
     }
   }, [logLines.value]);
 
-  // ── Spawn canvas drawing ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase.value !== "spawn") return;
-    drawMapSetup();
-  }, [phase.value, spawnCells.value, mapSize.value]);
+  // ── Phaser lifecycle ──────────────────────────────────────────────────────
 
-  // ── Game canvas rendering ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase.value !== "combat" && phase.value !== "result") return;
-    renderGame();
-  }, [gameState.value, selectedUnitId.value, currentAction.value]);
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Canvas functions (ported from tactical-game.html)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  function getCellSize(size: number) {
-    return Math.min(48, Math.floor(520 / size));
-  }
-
-  function isInSpawnZone(x: number, y: number) {
-    const half = Math.floor(mapSize.value / 2);
-    return playerNum === 1 ? x < half : x >= mapSize.value - half;
-  }
-
-  function drawMapSetup() {
-    const canvas = mapCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const sz = mapSize.value;
-    const cs = getCellSize(sz);
-    canvas.width = sz * cs;
-    canvas.height = sz * cs;
-
-    for (let y = 0; y < sz; y++) {
-      for (let x = 0; x < sz; x++) {
-        const inZone = isInSpawnZone(x, y);
-        ctx.fillStyle = inZone ? "rgba(127,127,213,.2)" : "#0a0a1a";
-        ctx.fillRect(x * cs, y * cs, cs, cs);
-        ctx.strokeStyle = "#1a1a3e";
-        ctx.strokeRect(x * cs, y * cs, cs, cs);
-      }
+  /** Destroy the Phaser game instance if one exists. */
+  function destroyPhaser() {
+    if (phaserGameRef.current) {
+      phaserGameRef.current.destroy(true);
+      phaserGameRef.current = null;
     }
+  }
 
-    spawnCells.value.forEach((c, i) => {
-      ctx.fillStyle = "#7f7fd5";
-      ctx.fillRect(c.x * cs + 2, c.y * cs + 2, cs - 4, cs - 4);
-      ctx.fillStyle = "#fff";
-      ctx.font = `${cs * 0.5}px serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const unitNames = ["Leader", "Heavy", "Sniper", "Dasher"] as const;
-      const emojis: Record<string, string> = {
-        Leader: "👑",
-        Heavy: "🛡️",
-        Sniper: "🎯",
-        Dasher: "⚡",
-      };
-      ctx.fillText(emojis[unitNames[i]], c.x * cs + cs / 2, c.y * cs + cs / 2);
+  /**
+   * Boot the appropriate Phaser scene inside #phaser-root.
+   * Must only be called on the client (guarded by typeof window).
+   */
+  async function bootPhaser(sceneKey: "SpawnScene" | "CombatScene") {
+    if (typeof window === "undefined") return;
+    destroyPhaser();
+
+    const Phaser = await import("phaser");
+
+    // Dynamic import of the scene class
+    const SceneModule = sceneKey === "SpawnScene"
+      ? await import("../phaser/SpawnScene.ts")
+      : await import("../phaser/CombatScene.ts");
+    const SceneClass = SceneModule.default;
+
+    const container = phaserRootRef.current;
+    if (!container) return;
+
+    // Clear container
+    container.innerHTML = "";
+
+    const initData = {
+      cols: mapCols.value,
+      rows: mapRows.value,
+      playerNum,
+    };
+
+    // Approximate initial canvas size
+    const hexSize = 32;
+    const pad = 40;
+    const estimatedW = initData.cols * hexSize * 1.6 + pad * 2;
+    const estimatedH = initData.rows * hexSize * 1.5 + pad * 2;
+
+    const game = new Phaser.Game({
+      type: Phaser.AUTO,
+      parent: container,
+      width: estimatedW,
+      height: estimatedH,
+      backgroundColor: "#0a0a1a",
+      scene: {
+        key: sceneKey,
+        // We use the scene's init to forward initData
+        preload() {},
+        create(this: Phaser.Scene) {
+          // Re-construct the actual scene and add it to the manager
+          const realScene = new SceneClass();
+          this.scene.add(sceneKey + "_real", realScene, true, initData);
+          this.scene.remove(sceneKey);  // remove this bootstrap scene
+
+          // Wire registry + events once the real scene's create lifecycle runs
+          realScene.events.once("create", () => {
+            if (sceneKey === "SpawnScene") {
+              // Push initial spawn cells
+              game.registry.set("spawnCells", spawnCells.value);
+              game.registry.set("mapSize", { cols: mapCols.value, rows: mapRows.value });
+
+              // Scene emits hex_clicked → island handles add/remove
+              realScene.events.on("hex_clicked", (coord: HexCoord) => {
+                if (spawnConfirmed.value) return;
+                const cells = [...spawnCells.value];
+                const idx = cells.findIndex((c) => c.q === coord.q && c.r === coord.r);
+                if (idx >= 0) cells.splice(idx, 1);
+                else if (cells.length < 4) cells.push(coord);
+                spawnCells.value = cells;
+                spawnError.value = "";
+                game.registry.set("spawnCells", cells);
+              });
+            }
+
+            if (sceneKey === "CombatScene") {
+              // Push initial state
+              if (gameState.value) game.registry.set("gameState", gameState.value);
+              game.registry.set("selectedUnitId", selectedUnitId.value);
+              game.registry.set("currentAction", currentAction.value);
+              if (turnDeadline.value) game.registry.set("turnDeadline", turnDeadline.value);
+              game.registry.set("turnDurationMs", turnDurationMs.value);
+              game.registry.set("timedOut", timedOut.value);
+
+              // Scene emits hex_clicked → island dispatches action
+              realScene.events.on("hex_clicked", (coord: HexCoord) => {
+                const state = gameState.value;
+                if (!state || !isMyTurn.value || !selectedUnitId.value || !currentAction.value) return;
+                const unit = state.units.find((u) => u.id === selectedUnitId.value);
+                if (!unit) return;
+
+                let action: GameAction | null = null;
+                if (currentAction.value === "move") {
+                  action = { type: "move", unitId: unit.id, q: coord.q, r: coord.r };
+                } else if (currentAction.value === "fire") {
+                  const target = state.units.find(
+                    (t) => t.q === coord.q && t.r === coord.r && t.hp > 0,
+                  );
+                  if (!target) {
+                    addLog("No target at that cell.", "sys");
+                    return;
+                  }
+                  action = { type: "fire", unitId: unit.id, targetId: target.id };
+                }
+                if (action) send({ type: "action", action });
+              });
+            }
+          });
+        },
+      },
     });
 
-    ctx.fillStyle = "#7f7fd5";
-    ctx.font = "11px Courier New";
-    ctx.textBaseline = "top";
-    if (playerNum === 1) {
-      ctx.textAlign = "left";
-      ctx.fillText("← Your spawn zone", 3, 3);
-    } else {
-      ctx.textAlign = "right";
-      ctx.fillText("Your spawn zone →", sz * cs - 3, 3);
-    }
-
-    if (playerNum === 1) {
-      const rect = canvas.getBoundingClientRect();
-      const t = new Date().toTimeString().slice(0, 8);
-      debugEntries.value = [...debugEntries.value,
-        `[${t}] CANVAS_DRAW sz=${sz} cs=${cs} canvas=${canvas.width}×${canvas.height} cssRect=${rect.width.toFixed(0)}×${rect.height.toFixed(0)}`];
-    }
+    phaserGameRef.current = game;
   }
 
-  function onMapCanvasClick(e: MouseEvent) {
-    if (spawnConfirmed.value) return;
-    const canvas = mapCanvasRef.current;
-    if (!canvas) return;
-    const sz = mapSize.value;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width < 4 || rect.height < 4) return;
-    // Use CSS pixel cell size (handles any canvas CSS scaling). Subtract 2px
-    // border on each side so clicks in the border don't map to out-of-bounds cells.
-    const cellW = (rect.width - 4) / sz;
-    const cellH = (rect.height - 4) / sz;
-    const x = Math.floor((e.clientX - rect.left - 2) / cellW);
-    const y = Math.floor((e.clientY - rect.top - 2) / cellH);
-
-    if (playerNum === 1) {
-      const t = new Date().toTimeString().slice(0, 8);
-      debugEntries.value = [...debugEntries.value,
-        `[${t}] CLICK raw=(${(e.clientX - rect.left).toFixed(0)},${(e.clientY - rect.top).toFixed(0)}) cssCell=${cellW.toFixed(1)}×${cellH.toFixed(1)} cssRect=${rect.width.toFixed(0)}×${rect.height.toFixed(0)} → cell(${x},${y})`];
+  // ── Boot / destroy Phaser when phase changes ──────────────────────────────
+  useEffect(() => {
+    if (phase.value === "spawn") {
+      bootPhaser("SpawnScene");
+    } else if (phase.value === "combat") {
+      bootPhaser("CombatScene");
+    } else if (phase.value === "result") {
+      destroyPhaser();
     }
+    return () => destroyPhaser();
+  }, [phase.value]);
 
-    if (x < 0 || x >= sz || y < 0 || y >= sz) return;
-    if (!isInSpawnZone(x, y)) return;
-
-    const cells = [...spawnCells.value];
-    const existing = cells.findIndex((c) => c.x === x && c.y === y);
-    if (existing >= 0) cells.splice(existing, 1);
-    else if (cells.length < 4) cells.push({ x, y });
-    spawnCells.value = cells;
-    spawnError.value = "";
-  }
-
-  function renderGame() {
-    const canvas = gameCanvasRef.current;
-    const state = gameState.value;
-    if (!canvas || !state) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const sz = state.mapSize;
-    const cs = getCellSize(sz);
-    canvas.width = sz * cs;
-    canvas.height = sz * cs;
-
-    // Grid
-    for (let y = 0; y < sz; y++) {
-      for (let x = 0; x < sz; x++) {
-        ctx.fillStyle = (x + y) % 2 === 0 ? "#0a0a1a" : "#0f0f22";
-        ctx.fillRect(x * cs, y * cs, cs, cs);
-        ctx.strokeStyle = "#1a1a3e";
-        ctx.strokeRect(x * cs, y * cs, cs, cs);
-      }
+  // ── Push signal changes into Phaser registry ──────────────────────────────
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game) return;
+    if (phase.value === "spawn") {
+      game.registry.set("spawnCells", spawnCells.value);
     }
+  }, [spawnCells.value]);
 
-    const selUnit = state.units.find((u) => u.id === selectedUnitId.value);
-
-    // Move range overlay
-    if (selUnit && currentAction.value === "move") {
-      for (let dy = -selUnit.Move; dy <= selUnit.Move; dy++) {
-        for (let dx = -selUnit.Move; dx <= selUnit.Move; dx++) {
-          const dist = Math.abs(dx) + Math.abs(dy);
-          if (dist > 0 && dist <= selUnit.Move) {
-            const nx = selUnit.x + dx, ny = selUnit.y + dy;
-            if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
-              ctx.fillStyle = "rgba(127,127,213,.25)";
-              ctx.fillRect(nx * cs, ny * cs, cs, cs);
-            }
-          }
-        }
-      }
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game) return;
+    if (phase.value === "spawn") {
+      game.registry.set("mapSize", { cols: mapCols.value, rows: mapRows.value });
     }
+  }, [mapCols.value, mapRows.value]);
 
-    // Fire range overlay
-    if (selUnit && currentAction.value === "fire") {
-      for (let dy = -selUnit.Range; dy <= selUnit.Range; dy++) {
-        for (let dx = -selUnit.Range; dx <= selUnit.Range; dx++) {
-          if (Math.abs(dx) + Math.abs(dy) <= selUnit.Range) {
-            const nx = selUnit.x + dx, ny = selUnit.y + dy;
-            if (nx >= 0 && nx < sz && ny >= 0 && ny < sz) {
-              ctx.fillStyle = "rgba(249,115,22,.2)";
-              ctx.fillRect(nx * cs, ny * cs, cs, cs);
-            }
-          }
-        }
-      }
-    }
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    if (gameState.value) game.registry.set("gameState", gameState.value);
+  }, [gameState.value]);
 
-    // Units
-    state.units.forEach((u) => {
-      const x = u.x * cs, y = u.y * cs;
-      if (u.hp <= 0) ctx.globalAlpha = 0.25;
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("selectedUnitId", selectedUnitId.value);
+  }, [selectedUnitId.value]);
 
-      ctx.beginPath();
-      ctx.arc(x + cs / 2, y + cs / 2, cs * 0.38, 0, Math.PI * 2);
-      ctx.fillStyle = u.player === playerNum ? "#1a2a5e" : "#3a1a1a";
-      ctx.fill();
-      ctx.strokeStyle = u.color;
-      ctx.lineWidth = u.id === selectedUnitId.value ? 3 : 1.5;
-      ctx.stroke();
-      ctx.lineWidth = 1;
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("currentAction", currentAction.value);
+  }, [currentAction.value]);
 
-      ctx.font = `${cs * 0.45}px serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(u.emoji, x + cs / 2, y + cs / 2);
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("turnDeadline", turnDeadline.value);
+  }, [turnDeadline.value]);
 
-      if (u.hp > 0) {
-        const barW = cs - 6, barH = 4;
-        const bx = x + 3, by = y + cs - 7;
-        ctx.fillStyle = "#333";
-        ctx.fillRect(bx, by, barW, barH);
-        const pct = Math.max(0, u.hp / u.maxHp);
-        ctx.fillStyle = pct > 0.5 ? "#86efac" : pct > 0.25 ? "#fbbf24" : "#f87171";
-        ctx.fillRect(bx, by, barW * pct, barH);
-      }
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("turnDurationMs", turnDurationMs.value);
+  }, [turnDurationMs.value]);
 
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.arc(x + cs - 6, y + 6, 3, 0, Math.PI * 2);
-      ctx.fillStyle = u.player === 1 ? "#7f7fd5" : "#f97316";
-      ctx.fill();
-    });
-  }
-
-  function onGameCanvasClick(e: MouseEvent) {
-    const state = gameState.value;
-    if (!state || !isMyTurn.value || !selectedUnitId.value || !currentAction.value) return;
-    const canvas = gameCanvasRef.current;
-    if (!canvas) return;
-    const cs = getCellSize(state.mapSize);
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / cs);
-    const y = Math.floor((e.clientY - rect.top) / cs);
-
-    const unit = state.units.find((u) => u.id === selectedUnitId.value);
-    if (!unit) return;
-
-    let action: GameAction | null = null;
-
-    if (currentAction.value === "move") {
-      action = { type: "move", unitId: unit.id, x, y };
-    } else if (currentAction.value === "fire") {
-      const target = state.units.find(
-        (t) => t.x === x && t.y === y && t.hp > 0,
-      );
-      if (!target) {
-        addLog("No target at that cell.", "sys");
-        return;
-      }
-      action = { type: "fire", unitId: unit.id, targetId: target.id };
-    }
-
-    if (action) {
-      send({ type: "action", action });
-    }
-  }
+  useEffect(() => {
+    const game = phaserGameRef.current;
+    if (!game || phase.value !== "combat") return;
+    game.registry.set("timedOut", timedOut.value);
+  }, [timedOut.value]);
 
   function doReload() {
     if (!isMyTurn.value || !selectedUnitId.value) return;
@@ -763,11 +738,12 @@ export default function GameIsland(
             {([8, 12, 16] as const).map((s) => (
               <button
                 key={s}
-                class={`btn btn-xs ${mapSize.value === s ? "btn-primary" : "btn-outline"}`}
+                class={`btn btn-xs ${mapCols.value === s ? "btn-primary" : "btn-outline"}`}
                 disabled={spawnConfirmed.value}
                 onClick={() => {
-                  mapSize.value = s;
-                  send({ type: "map_size", size: s });
+                  mapCols.value = s;
+                  mapRows.value = s;
+                  send({ type: "map_size", mapCols: s, mapRows: s });
                 }}
               >
                 {s}×{s}
@@ -777,7 +753,7 @@ export default function GameIsland(
         )}
         {playerNum === 2 && (
           <p class="text-base-content/50 text-sm">
-            Map size: {mapSizeFromHost.value ?? "waiting for host..."}
+            Map size: {mapColsFromHost.value ? `${mapColsFromHost.value}×${mapRows.value}` : "waiting for host..."}
           </p>
         )}
 
@@ -809,10 +785,9 @@ export default function GameIsland(
             : `Click a highlighted cell (right half) to place each unit in order. Undo to re-place.`}
         </p>
 
-        <canvas
-          ref={mapCanvasRef}
-          style="cursor:crosshair;border:2px solid #7f7fd5;border-radius:4px;max-width:100%"
-          onClick={onMapCanvasClick}
+        <div
+          ref={phaserRootRef}
+          style="border:2px solid #7f7fd5;border-radius:4px;max-width:100%;overflow:hidden"
         />
 
         {spawnError.value && (
@@ -872,14 +847,11 @@ export default function GameIsland(
       </div>
 
       <div class="flex gap-3 flex-wrap">
-        {/* Game canvas */}
-        <div>
-          <canvas
-            ref={gameCanvasRef}
-            style="border:2px solid #7f7fd5;border-radius:4px;cursor:crosshair"
-            onClick={onGameCanvasClick}
-          />
-        </div>
+        {/* Phaser game canvas */}
+        <div
+          ref={phaserRootRef}
+          style="border:2px solid #7f7fd5;border-radius:4px;overflow:hidden"
+        />
 
         {/* HUD */}
         <div class="flex flex-col gap-3 min-w-[200px] flex-1">
