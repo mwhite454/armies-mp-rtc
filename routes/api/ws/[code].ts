@@ -37,9 +37,11 @@ function startTurnTimer(
 ): void {
   clearTurnTimer(room);
   const deadline = Date.now() + TURN_TIMER_MS;
-  broadcastToAll(room, { type: "turn_timer_start", deadline });
+  room.turnDeadline = deadline;
+  broadcastToAll(room, { type: "turn_timer_start", deadline, turnDurationMs: TURN_TIMER_MS });
 
   room.turnTimerId = setTimeout(async () => {
+    if (room.phase !== "combat") return;
     if (!room.gameState || room.gameState.turn !== currentTurn) return;
 
     // Auto end-turn
@@ -60,6 +62,7 @@ function clearTurnTimer(room: ActiveRoom): void {
     clearTimeout(room.turnTimerId);
     room.turnTimerId = null;
   }
+  room.turnDeadline = null;
 }
 
 export const handler = define.handlers({
@@ -174,6 +177,16 @@ export const handler = define.handlers({
           type: "game_start",
           state: room.gameState,
         });
+        if (room.turnDeadline !== null) {
+          const remainingMs = room.turnDeadline - Date.now();
+          if (remainingMs > 0) {
+            sendToUser(room, user.id, {
+              type: "turn_timer_start",
+              deadline: room.turnDeadline,
+              turnDurationMs: TURN_TIMER_MS,
+            });
+          }
+        }
       }
     };
 
@@ -218,6 +231,19 @@ export const handler = define.handlers({
 
         case "map_size": {
           if (playerNum !== 1) return; // only host sets map size
+          const MIN_DIM = 4;
+          const MAX_DIM = 32;
+          if (
+            !Number.isInteger(msg.mapCols) || msg.mapCols < MIN_DIM || msg.mapCols > MAX_DIM ||
+            !Number.isInteger(msg.mapRows) || msg.mapRows < MIN_DIM || msg.mapRows > MAX_DIM
+          ) {
+            sendToUser(room, user.id, {
+              type: "error",
+              code: "INVALID_MAP_SIZE",
+              message: `Map dimensions must be integers between ${MIN_DIM} and ${MAX_DIM}.`,
+            });
+            return;
+          }
           room.mapCols = msg.mapCols;
           room.mapRows = msg.mapRows;
           kvRoom.mapCols = msg.mapCols;
@@ -428,7 +454,8 @@ async function recordGameResult(
       gameId,
       opponent: loserId,
       result: "win",
-      mapSize: kvRoom.mapCols,
+      mapCols: kvRoom.mapCols,
+      mapRows: kvRoom.mapRows,
       rounds: kvRoom.round ?? 1,
       playedAt: Date.now(),
     }),
@@ -436,7 +463,8 @@ async function recordGameResult(
       gameId,
       opponent: winnerId,
       result: "loss",
-      mapSize: kvRoom.mapCols,
+      mapCols: kvRoom.mapCols,
+      mapRows: kvRoom.mapRows,
       rounds: kvRoom.round ?? 1,
       playedAt: Date.now(),
     }),

@@ -8,7 +8,6 @@
 import * as Phaser from "phaser";
 import { hexToPixel, hexRange, hexDimensions } from "../../lib/hex-pixels.ts";
 import type { GameState, HexCoord, Unit } from "../../lib/types.ts";
-import { UNIT_EMOJIS, UNIT_TYPES } from "../../lib/types.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -83,8 +82,15 @@ export default class CombatScene extends Phaser.Scene {
 
     // ── Registry listeners ───────────────────────────────────────────────────
     this.registry.events.on("changedata-gameState", (_: unknown, state: GameState) => {
+      const dimensionsChanged = state.mapCols !== this.cols || state.mapRows !== this.rows;
       this.cols = state.mapCols;
       this.rows = state.mapRows;
+      if (dimensionsChanged) {
+        const { w, h } = this.canvasSize();
+        this.scale.resize(w, h);
+        this.drawGrid();
+        this.drawTimerBackground();
+      }
       this.refreshUnits(state);
       this.refreshOverlays(state);
     });
@@ -308,7 +314,10 @@ export default class CombatScene extends Phaser.Scene {
     if (!deadline) return;
 
     const now = Date.now();
-    const totalMs = 30_000; // assume 30s per turn; adjust if server differs
+    const configuredDuration = this.registry.get("turnDurationMs") as number | null;
+    const totalMs = typeof configuredDuration === "number" && configuredDuration > 0
+      ? configuredDuration
+      : 60_000; // default to 60s to match server if not provided
     const remaining = Math.max(0, deadline - now);
     const pct = Math.min(1, remaining / totalMs);
 

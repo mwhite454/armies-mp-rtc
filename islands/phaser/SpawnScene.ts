@@ -29,10 +29,6 @@ function hexPoints(cx: number, cy: number, size: number): Phaser.Geom.Point[] {
   return pts;
 }
 
-function hexKey(q: number, r: number): string {
-  return `${q},${r}`;
-}
-
 // ── Scene ──────────────────────────────────────────────────────────────────────
 
 export default class SpawnScene extends Phaser.Scene {

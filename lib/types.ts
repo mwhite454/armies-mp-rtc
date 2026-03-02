@@ -101,7 +101,8 @@ export interface GameHistoryRecord {
   gameId: string;
   opponent: string;
   result: "win" | "loss";
-  mapSize: number;
+  mapCols: number;
+  mapRows: number;
   rounds: number;
   playedAt: number;
 }
@@ -167,7 +168,7 @@ export type ServerMessage =
     actorPlayerNum: 1 | 2;
   }
   | { type: "turn_change"; currentTurn: 1 | 2 }
-  | { type: "turn_timer_start"; deadline: number }
+  | { type: "turn_timer_start"; deadline: number; turnDurationMs: number }
   | { type: "turn_timeout"; playerNum: 1 | 2 }
   | { type: "game_over"; winnerPlayerNum: 1 | 2; winnerId: string }
   | { type: "new_round_start"; rebuild: boolean }
